@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tetris-Duell – Beamer</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 3 2%27%3E%3Cpath fill=%27%23a855f7%27 d=%27M0 1h3v1H0zM1 0h1v1H1z%27/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/host.css">
+</head>
+<body>
+  <main id="game">
+    <section class="player" id="p0">
+      <header class="pname"><span class="dot"></span><span class="name">Spieler 1</span></header>
+      <canvas class="board"></canvas>
+    </section>
+
+    <aside id="center">
+      <h1>TETRIS<br><span>DUELL</span></h1>
+      <div id="rounds"><span id="r0">0</span><small>:</small><span id="r1">0</span></div>
+      <div class="roundlabel">Runden</div>
+      <div id="miniJoin">
+        <div id="miniQr"></div>
+        <div class="code">Code <b class="roomcode">·····</b></div>
+      </div>
+      <div class="teacher">
+        <button id="btnPause" title="Taste P">Pause</button>
+        <button id="btnLobby" title="Zurück zur Lobby">Lobby</button>
+        <button id="btnFull" title="Taste F11">Vollbild</button>
+      </div>
+    </aside>
+
+    <section class="player" id="p1">
+      <header class="pname"><span class="dot"></span><span class="name">Spieler 2</span></header>
+      <canvas class="board"></canvas>
+    </section>
+  </main>
+
+  <!-- Lobby -->
+  <div id="lobby" class="overlay">
+    <h1 class="title">TETRIS <span>DUELL</span></h1>
+    <p class="sub">Scannt den QR-Code mit eurem Smartphone, um mitzuspielen.</p>
+    <div class="cards">
+      <div class="card" id="card0">
+        <h2>Spieler 1</h2>
+        <div class="qr" id="qr0"></div>
+        <div class="status">Wartet …</div>
+        <button class="kick" data-slot="0" hidden>Entfernen</button>
+      </div>
+      <div class="card" id="card1">
+        <h2>Spieler 2</h2>
+        <div class="qr" id="qr1"></div>
+        <div class="status">Wartet …</div>
+        <button class="kick" data-slot="1" hidden>Entfernen</button>
+      </div>
+    </div>
+    <p class="manual">Oder auf dem Handy öffnen: <b id="joinUrl">…</b> &nbsp;·&nbsp; Code: <b class="roomcode">·····</b></p>
+    <div id="netStatus" class="net">Verbinde mit dem Server …</div>
+    <button id="btnStart" class="big">Spiel starten <small>(Enter)</small></button>
+    <p class="hint" id="startHint">Ohne Handy kann ein Platz zum Testen per Tastatur gespielt werden (siehe Hilfe).</p>
+    <details class="help">
+      <summary>Hilfe &amp; Tastatur</summary>
+      <p><b>Lehrkraft:</b> Enter = Start / Nächste Runde · P = Pause · F11 = Vollbild · Esc = Lobby</p>
+      <p><b>Tastatur Spieler 1:</b> A / D bewegen · S schneller · W drehen · Q gegen den Uhrzeigersinn · E halten · Leertaste fallen lassen</p>
+      <p><b>Tastatur Spieler 2:</b> ← / → bewegen · ↓ schneller · ↑ drehen · . (Punkt) gegen den Uhrzeigersinn · - (Minus) halten · Shift rechts fallen lassen</p>
+    </details>
+    <p id="fileWarn" class="warn" hidden>Diese Seite wurde als lokale Datei geöffnet – Handys können den QR-Code so nicht nutzen. Bitte über die veröffentlichte Webadresse (z. B. GitHub Pages) öffnen.</p>
+  </div>
+
+  <!-- Countdown / Pause / Ergebnis -->
+  <div id="banner" class="overlay banner" hidden>
+    <div class="bigtext" id="bannerText"></div>
+    <div class="smalltext" id="bannerSub"></div>
+    <button id="btnNext" class="big" hidden>Nächste Runde <small>(Enter)</small></button>
+  </div>
+
+  <script src="vendor/peerjs.min.js"></script>
+  <script src="vendor/qrcode.min.js"></script>
+  <script src="js/tetris.js"></script>
+  <script src="js/host.js"></script>
+</body>
+</html>

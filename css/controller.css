@@ -1,0 +1,92 @@
+:root {
+  --bg: #0a0e1a;
+  --panel: #151d33;
+  --line: #2a3658;
+  --text: #e8ecf8;
+  --muted: #8a97b8;
+  --accent: #3da5ff;
+  --ok: #2ecc71;
+  --bad: #ff4d5e;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  overscroll-behavior: none;
+}
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.screen[hidden] { display: none !important; }
+
+/* ---------- Beitreten ---------- */
+#join {
+  min-height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 18px;
+  padding: 24px 16px; max-width: 420px; margin: 0 auto;
+}
+#join h1 { text-align: center; font-size: 40px; margin: 0 0 12px; letter-spacing: .08em;
+  background: linear-gradient(90deg, #3da5ff, #b18cff, #ff9f1c);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+#join h1 span { letter-spacing: .25em; }
+label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 15px; }
+input {
+  font: inherit; font-size: 22px; padding: 12px 14px; border-radius: 12px;
+  border: 2px solid var(--line); background: var(--panel); color: var(--text);
+  -webkit-user-select: text; user-select: text;
+}
+input:focus { outline: none; border-color: var(--accent); }
+#code { text-transform: uppercase; letter-spacing: .3em; }
+#btnJoin {
+  font: inherit; font-size: 24px; font-weight: 800; padding: 16px; border: none; border-radius: 14px;
+  background: linear-gradient(90deg, #2b6fff, #7b4dff); color: #fff;
+}
+#btnJoin:disabled { opacity: .5; }
+.msg { text-align: center; color: var(--muted); min-height: 1.4em; margin: 0; }
+.msg.err { color: var(--bad); }
+
+/* ---------- Gamepad ---------- */
+#pad {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  gap: 10px;
+  touch-action: none;
+  border-top: 6px solid var(--accent);
+  transition: background .3s;
+}
+#bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 18px; }
+.who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.who b { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 20px; }
+#pdot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); flex: none; }
+#pdot.on { background: var(--ok); }
+#pdot.off { background: var(--bad); }
+#info { color: var(--muted); font-size: 15px; text-align: right; white-space: nowrap; }
+.status {
+  flex: 0 0 auto; min-height: 64px;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  font-size: 26px; font-weight: 800; line-height: 1.15; padding: 4px;
+}
+.status.big { font-size: 64px; }
+#pad.win { background: #0f3d26; }
+#pad.lose { background: #3d0f16; }
+#pad.hit { animation: hit .35s; }
+@keyframes hit { 0% { background: #5a1520; } 100% { background: var(--bg); } }
+
+.controls { flex: 1; display: flex; gap: 12px; min-height: 0; }
+.cluster { flex: 1; display: grid; gap: 10px; grid-template-columns: 1fr 1fr; min-height: 0; }
+.cluster.left { grid-template-rows: 2fr 1fr; }
+.cluster.right { grid-template-rows: 0.8fr 1.6fr 1.2fr; }
+.btn {
+  font: inherit; color: var(--text);
+  background: var(--panel); border: 2px solid var(--line); border-radius: 18px;
+  font-size: clamp(28px, 9vmin, 64px); font-weight: 700;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  touch-action: none; padding: 0; min-height: 0;
+}
+.btn small { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.btn.small { font-size: clamp(22px, 7vmin, 44px); }
+.btn.wide { grid-column: span 2; }
+.btn.rot { background: #1d2b52; }
+.btn.drop { background: #3a1d52; }
+.btn.pressed { background: var(--accent); border-color: var(--accent); color: #fff; transform: scale(.97); }
+.btn.pressed small { color: #fff; }
+#pad.inactive .btn { opacity: .45; }
