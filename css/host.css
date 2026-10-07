@@ -22,6 +22,7 @@ body {
 /* ---------- Spielansicht ---------- */
 #game {
   height: 100vh;
+  width: 100vw;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -93,20 +94,6 @@ button:disabled { opacity: .4; cursor: default; }
   background: linear-gradient(90deg, var(--p0), #b18cff, var(--p1));
   -webkit-background-clip: text; background-clip: text; color: transparent; }
 .sub { margin: 0; font-size: clamp(16px, 2.6vh, 32px); color: var(--muted); }
-.cards { display: flex; gap: 4vw; margin: 1vh 0; }
-.card {
-  background: var(--panel); border: 4px solid var(--line); border-radius: 22px;
-  padding: 2vh 2vw; display: flex; flex-direction: column; align-items: center; gap: 1.2vh;
-  min-width: 28vh;
-}
-.card h2 { margin: 0; font-size: clamp(20px, 3.6vh, 44px); }
-#card0 h2 { color: var(--p0); } #card1 h2 { color: var(--p1); }
-.card .qr { background: #fff; padding: 12px; border-radius: 12px; }
-.card .qr img, .card .qr canvas { display: block; width: 28vh !important; height: 28vh !important; }
-.card .status { font-size: clamp(16px, 2.8vh, 34px); font-weight: 700; color: var(--muted); max-width: 32vh; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card.joined { border-color: var(--ok); }
-.card.joined .status { color: var(--ok); }
-.card.joined .qr { opacity: .25; }
 .manual { margin: 0; color: var(--muted); font-size: clamp(13px, 1.9vh, 22px); }
 .manual b { color: var(--text); }
 .net { font-size: clamp(12px, 1.7vh, 20px); color: var(--muted); }
@@ -121,4 +108,75 @@ button:disabled { opacity: .4; cursor: default; }
 .bigtext { font-size: clamp(48px, 16vh, 220px); font-weight: 900; text-shadow: 0 6px 30px rgba(0,0,0,.8); line-height: 1.05; }
 .smalltext { font-size: clamp(18px, 4vh, 54px); font-weight: 700; color: var(--text); text-shadow: 0 3px 16px rgba(0,0,0,.9); }
 .banner.result { background: rgba(6, 9, 18, .8); }
-.card .kick { font-size: clamp(12px, 1.6vh, 18px); }
+
+main[hidden] { display: none !important; }
+#center h1 { font-size: clamp(26px, 6vh, 80px); }
+
+/* ---------- Lobby ---------- */
+.lobbygrid { display: flex; gap: 4vw; align-items: stretch; justify-content: center; max-width: 94vw; }
+.joinbox, .listbox {
+  background: var(--panel); border: 2px solid var(--line); border-radius: 22px;
+  padding: 2.4vh 2vw; display: flex; flex-direction: column; align-items: center; gap: 1.4vh;
+}
+.listbox { width: min(46vw, 760px); }
+.qr { background: #fff; padding: 14px; border-radius: 14px; }
+.qr img, .qr canvas { display: block; width: 40vh !important; height: 40vh !important; }
+.roomcode.big { font-size: 1.6em; letter-spacing: .2em; }
+.listbox h2 { margin: 0; font-size: clamp(22px, 4vh, 48px); }
+#chips {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  align-content: flex-start; flex: 1; min-height: 20vh; max-height: 40vh; overflow: auto;
+}
+#chips li {
+  background: #1d2b52; border: 1px solid #2f4275; border-radius: 999px; padding: .3em .9em;
+  font-size: clamp(14px, 2.3vh, 28px); font-weight: 700; cursor: pointer; animation: pop .25s;
+}
+#chips li:hover { background: #5a1520; border-color: var(--bad); text-decoration: line-through; }
+#chips li.off { opacity: .45; }
+#chips li.empty { background: none; border: none; color: var(--muted); font-weight: 400; cursor: default; text-decoration: none; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+.target-set { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: clamp(14px, 2vh, 22px); }
+.target-set input {
+  font: inherit; font-weight: 800; width: 6em; padding: .25em .5em; border-radius: 10px;
+  border: 2px solid var(--line); background: var(--bg); color: var(--text); text-align: center;
+}
+
+/* ---------- Runde 1 ---------- */
+#quali { height: 100vh; display: flex; flex-direction: column; padding: 2.5vh 3vw; gap: 2vh; }
+.qhead { display: flex; justify-content: space-between; align-items: center; gap: 2vw; }
+.qround { color: var(--muted); font-weight: 800; letter-spacing: .3em; font-size: clamp(14px, 2.4vh, 30px); }
+.qtitle { margin: .2em 0 0; font-size: clamp(26px, 5.5vh, 72px); }
+.qtitle b { color: #facc15; }
+.qjoin { display: flex; align-items: center; gap: 1.2vw; color: var(--muted); font-size: clamp(13px, 2vh, 24px); }
+.qcount b { color: var(--text); font-size: 1.4em; }
+.minqr { background: #fff; padding: 5px; border-radius: 8px; }
+.minqr img, .minqr canvas { display: block; width: 10vh !important; height: 10vh !important; }
+#board {
+  list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0;
+  display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--rows, 10), 1fr); gap: 1vh 2vw;
+  grid-template-columns: repeat(var(--cols, 1), 1fr);
+}
+#board li {
+  position: relative; display: flex; align-items: center; gap: .6em; min-height: 0;
+  background: var(--panel); border: 2px solid var(--line); border-radius: 12px; overflow: hidden;
+  padding: 0 .8em; font-size: var(--fs, 3vh); font-weight: 800;
+}
+#board .bar { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, rgba(61,165,255,.25), rgba(177,140,255,.4)); transition: width .4s; }
+#board .rank, #board .nm, #board .pts { position: relative; }
+#board .rank { color: var(--muted); width: 2.2em; text-align: right; flex: none; }
+#board .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#board .pts { font-variant-numeric: tabular-nums; }
+#board li.q { border-color: #facc15; }
+#board li.q .bar { background: linear-gradient(90deg, rgba(250,204,21,.35), rgba(250,204,21,.55)); }
+#board li.off .nm { opacity: .45; }
+#board li.bump { animation: bump .5s; }
+@keyframes bump { 0% { transform: scale(1.04); border-color: #fff; } 100% { transform: none; } }
+#quali .teacher { margin: 0; justify-content: flex-end; }
+
+/* ---------- Finalisten ---------- */
+.versus { display: flex; align-items: center; gap: 4vw; margin: 3vh 0; }
+.fname { font-size: clamp(40px, 11vh, 150px); font-weight: 900; animation: pop .6s; }
+#f0 { color: var(--p0); } #f1 { color: var(--p1); }
+.vs { font-size: clamp(24px, 6vh, 80px); color: var(--muted); font-weight: 800; }
+.btnrow { display: flex; gap: 2vw; }
+button.big.alt { background: var(--panel); border: 2px solid var(--line); }

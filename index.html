@@ -3,29 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tetris-Duell – Beamer</title>
+  <title>Tetris-Klassenturnier – Beamer</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 3 2%27%3E%3Cpath fill=%27%23a855f7%27 d=%27M0 1h3v1H0zM1 0h1v1H1z%27/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/host.css">
 </head>
 <body>
-  <main id="game">
+  <!-- Runde 2: Duell -->
+  <main id="game" hidden>
     <section class="player" id="p0">
       <header class="pname"><span class="dot"></span><span class="name">Spieler 1</span></header>
       <canvas class="board"></canvas>
     </section>
 
     <aside id="center">
-      <h1>TETRIS<br><span>DUELL</span></h1>
+      <h1>FINALE</h1>
       <div id="rounds"><span id="r0">0</span><small>:</small><span id="r1">0</span></div>
       <div class="roundlabel">Runden</div>
-      <div id="miniJoin">
-        <div id="miniQr"></div>
-        <div class="code">Code <b class="roomcode">·····</b></div>
-      </div>
       <div class="teacher">
         <button id="btnPause" title="Taste P">Pause</button>
-        <button id="btnLobby" title="Zurück zur Lobby">Lobby</button>
-        <button id="btnFull" title="Taste F11">Vollbild</button>
+        <button id="btnLobby" title="Taste Esc">Neues Spiel</button>
+        <button class="btnFull" title="Taste F11">Vollbild</button>
       </div>
     </aside>
 
@@ -35,47 +32,85 @@
     </section>
   </main>
 
+  <!-- Runde 1: Rangliste -->
+  <main id="quali" hidden>
+    <header class="qhead">
+      <div>
+        <div class="qround">RUNDE 1</div>
+        <h1 class="qtitle">Wer schafft zuerst <b class="target">100</b> Punkte?</h1>
+      </div>
+      <div class="qjoin">
+        <div class="qcount"><b id="qPlayers">0</b> Spieler/innen</div>
+        <div id="qQr" class="minqr"></div>
+        <div class="code">Code <b class="roomcode">·····</b></div>
+      </div>
+    </header>
+    <ol id="board"></ol>
+    <footer class="teacher">
+      <button id="btnPauseQ" title="Taste P">Pause</button>
+      <button id="btnLobbyQ" title="Taste Esc">Zur Lobby</button>
+      <button class="btnFull" title="Taste F11">Vollbild</button>
+    </footer>
+  </main>
+
   <!-- Lobby -->
   <div id="lobby" class="overlay">
-    <h1 class="title">TETRIS <span>DUELL</span></h1>
-    <p class="sub">Scannt den QR-Code mit eurem Smartphone, um mitzuspielen.</p>
-    <div class="cards">
-      <div class="card" id="card0">
-        <h2>Spieler 1</h2>
-        <div class="qr" id="qr0"></div>
-        <div class="status">Wartet …</div>
-        <button class="kick" data-slot="0" hidden>Entfernen</button>
+    <h1 class="title">TETRIS <span>KLASSENTURNIER</span></h1>
+    <div class="lobbygrid">
+      <div class="joinbox">
+        <p class="sub">Alle scannen diesen QR-Code:</p>
+        <div class="qr" id="qrMain"></div>
+        <p class="manual"><b id="joinUrl">…</b><br>Code: <b class="roomcode big">·····</b></p>
+        <div id="netStatus" class="net">Verbinde mit dem Server …</div>
       </div>
-      <div class="card" id="card1">
-        <h2>Spieler 2</h2>
-        <div class="qr" id="qr1"></div>
-        <div class="status">Wartet …</div>
-        <button class="kick" data-slot="1" hidden>Entfernen</button>
+      <div class="listbox">
+        <h2><span id="count">0</span> / 30 dabei</h2>
+        <ul id="chips"><li class="empty">Noch niemand – scannt den QR-Code!</li></ul>
+        <p class="hint">Antippen eines Namens entfernt die Person.</p>
+        <label class="target-set">Zielpunktzahl für Runde 1
+          <input id="target" type="number" min="100" max="100000" step="100" value="100">
+        </label>
+        <button id="btnStart" class="big" disabled>Runde 1 starten <small>(Enter)</small></button>
+        <p class="hint" id="startHint">Mindestens 2 Spieler/innen nötig.</p>
       </div>
     </div>
-    <p class="manual">Oder auf dem Handy öffnen: <b id="joinUrl">…</b> &nbsp;·&nbsp; Code: <b class="roomcode">·····</b></p>
-    <div id="netStatus" class="net">Verbinde mit dem Server …</div>
-    <button id="btnStart" class="big">Spiel starten <small>(Enter)</small></button>
-    <p class="hint" id="startHint">Ohne Handy kann ein Platz zum Testen per Tastatur gespielt werden (siehe Hilfe).</p>
     <details class="help">
-      <summary>Hilfe &amp; Tastatur</summary>
-      <p><b>Lehrkraft:</b> Enter = Start / Nächste Runde · P = Pause · F11 = Vollbild · Esc = Lobby</p>
-      <p><b>Tastatur Spieler 1:</b> A / D bewegen · S schneller · W drehen · Q gegen den Uhrzeigersinn · E halten · Leertaste fallen lassen</p>
-      <p><b>Tastatur Spieler 2:</b> ← / → bewegen · ↓ schneller · ↑ drehen · . (Punkt) gegen den Uhrzeigersinn · - (Minus) halten · Shift rechts fallen lassen</p>
+      <summary>Ablauf &amp; Tasten</summary>
+      <p><b>Runde 1:</b> Alle spielen auf dem eigenen Handy. Die ersten zwei, die die Zielpunktzahl erreichen, kommen ins Finale. Wer vollläuft, beginnt mit 0 Punkten neu.</p>
+      <p><b>Runde 2 (Finale):</b> Die zwei spielen am Beamer gegeneinander. Gelöschte Reihen schicken Müllzeilen zum Gegner.</p>
+      <p><b>Lehrkraft:</b> Enter = Start / weiter · P = Pause · Esc = Lobby / neues Spiel · F11 = Vollbild</p>
+      <p><b>Tastatur-Test im Finale:</b> Spieler 1: A / D bewegen, W drehen · Spieler 2: ← / → bewegen, ↑ drehen</p>
     </details>
     <p id="fileWarn" class="warn" hidden>Diese Seite wurde als lokale Datei geöffnet – Handys können den QR-Code so nicht nutzen. Bitte über die veröffentlichte Webadresse (z. B. GitHub Pages) öffnen.</p>
+  </div>
+
+  <!-- Runde 1 vorbei: Finalisten -->
+  <div id="finalists" class="overlay" hidden>
+    <div class="qround">RUNDE 1 GESCHAFFT!</div>
+    <h1 class="title">FINALE</h1>
+    <div class="versus">
+      <div class="fname" id="f0">…</div>
+      <div class="vs">vs.</div>
+      <div class="fname" id="f1">…</div>
+    </div>
+    <button id="btnFinal" class="big">Finale starten <small>(Enter)</small></button>
+    <button id="btnBackQ">Zur Lobby</button>
   </div>
 
   <!-- Countdown / Pause / Ergebnis -->
   <div id="banner" class="overlay banner" hidden>
     <div class="bigtext" id="bannerText"></div>
     <div class="smalltext" id="bannerSub"></div>
-    <button id="btnNext" class="big" hidden>Nächste Runde <small>(Enter)</small></button>
+    <div class="btnrow" id="resultButtons" hidden>
+      <button id="btnNext" class="big">Revanche <small>(Enter)</small></button>
+      <button id="btnNew" class="big alt">Neues Spiel <small>(Esc)</small></button>
+    </div>
   </div>
 
   <script src="vendor/peerjs.min.js"></script>
   <script src="vendor/qrcode.min.js"></script>
   <script src="js/tetris.js"></script>
+  <script src="js/render.js"></script>
   <script src="js/host.js"></script>
 </body>
 </html>

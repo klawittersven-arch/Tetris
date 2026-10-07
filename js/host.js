@@ -1,19 +1,18 @@
 /*
- * Beamer-Ansicht: verwaltet die Verbindungen zu den Handys (PeerJS/WebRTC),
- * führt beide Spiele aus und zeichnet sie.
+ * Beamer-Ansicht: verwaltet die Verbindungen zu bis zu 30 Handys (PeerJS/WebRTC).
+ * Runde 1: alle spielen auf dem Handy, der Beamer zeigt die Rangliste.
+ * Runde 2: die zwei Schnellsten spielen das Finale-Duell am Beamer.
  */
 (function () {
   'use strict';
 
-  const { Game, SHAPES, COLS, HIDDEN, VISIBLE } = window.Tetris;
+  const { Game, COLS, VISIBLE } = window.Tetris;
+  const { drawBoard, miniPiece } = window.TetrisRender;
   const PREFIX = 'tetris-duell-';
   const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const MAX_PLAYERS = 30;
   const DAS = 160;   // ms bis zur Wiederholung beim Gedrückthalten
   const ARR = 45;    // ms zwischen Wiederholungen
-  const COLORS = {
-    I: '#22d3ee', O: '#facc15', T: '#a855f7', S: '#22c55e',
-    Z: '#ef4444', J: '#3b82f6', L: '#f97316', G: '#64748b',
-  };
   const PLAYER_COLORS = ['#3da5ff', '#ff9f1c'];
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -35,22 +34,38 @@
   // ---------- Zustand ----------
   let peer = null;
   let roomCode = null;
-  let phase = 'lobby';          // lobby | countdown | playing | paused | over
+  // lobby | r1-countdown | r1 | r1-done | countdown | playing | paused | over
+  let phase = 'lobby';
+  let pausedFrom = '';
   let pauseReason = '';
+  let target = 100;
+  let r1Seed = 0;
+  let qualified = [];           // clientIds in Reihenfolge des Erreichens
+  let finalists = [null, null]; // clientIds der beiden Finalisten
   let games = [null, null];
   let rounds = [0, 0];
   let lastResult = null;        // { winner: 0|1|-1 }
   let countdownTimer = null;
-  const slots = [0, 1].map(i => ({ conn: null, clientId: null, name: '', connected: false, kbd: false, lastSeen: 0 }));
+  let boardDirty = true;
+  const players = new Map();    // clientId -> Spieler
   const inputs = [0, 1].map(() => freshInput());
   const popups = [[], []];
 
   function freshInput() {
-    return { left: false, right: false, down: false, dir: 0, das: 0, arr: 0 };
+    return { left: false, right: false, dir: 0, das: 0, arr: 0 };
   }
 
-  function playerName(i) {
-    return slots[i].name || `Spieler ${i + 1}`;
+  function finalist(i) {
+    return players.get(finalists[i]) || null;
+  }
+
+  function finalistName(i) {
+    const p = finalist(i);
+    return p ? p.name : `Spieler ${i + 1}`;
+  }
+
+  function isDuel() {
+    return ['countdown', 'playing', 'over'].includes(phase) || (phase === 'paused' && pausedFrom === 'playing');
   }
 
   // ---------- Netzwerk ----------
@@ -100,12 +115,11 @@
     });
   }
 
-  function joinUrl(slot) {
+  function joinUrl() {
     const u = new URL('controller.html', location.href);
     u.search = '';
     u.hash = '';
     u.searchParams.set('room', roomCode);
-    if (slot !== undefined) u.searchParams.set('slot', String(slot + 1));
     if (serverParam) u.searchParams.set('server', serverParam);
     return u.toString();
   }
@@ -117,114 +131,219 @@
   }
 
   function renderJoinInfo() {
-    makeQr($('#qr0'), joinUrl(0));
-    makeQr($('#qr1'), joinUrl(1));
-    makeQr($('#miniQr'), joinUrl());
+    makeQr($('#qrMain'), joinUrl());
+    makeQr($('#qQr'), joinUrl());
     document.querySelectorAll('.roomcode').forEach(el => { el.textContent = roomCode; });
     const base = new URL('controller.html', location.href);
     $('#joinUrl').textContent = base.host + base.pathname;
   }
 
-  function isFree(i) {
-    const s = slots[i];
-    return !s.clientId || (!s.connected && phase === 'lobby');
+  function uniqueName(raw, id) {
+    let base = String(raw || '').trim().slice(0, 16) || 'Spieler/in';
+    const taken = n => [...players.values()].some(p => p.id !== id && p.name.toLowerCase() === n.toLowerCase());
+    let name = base, k = 2;
+    while (taken(name)) name = `${base.slice(0, 13)} ${k++}`;
+    return name;
   }
 
   function handleConnection(conn) {
-    let slotIndex = -1;
+    let me = null;
 
     conn.on('data', msg => {
       if (!msg || typeof msg !== 'object') return;
-      if (slotIndex >= 0 && slots[slotIndex].conn === conn) slots[slotIndex].lastSeen = Date.now();
+      if (me && me.conn === conn) me.lastSeen = Date.now();
+
       if (msg.type === 'hello') {
-        let i = slots.findIndex(s => s.clientId && s.clientId === msg.clientId);
-        if (i < 0) {
-          const pref = msg.slot === 1 || msg.slot === 2 ? msg.slot - 1 : 0;
-          i = isFree(pref) ? pref : (isFree(1 - pref) ? 1 - pref : -1);
+        const id = String(msg.clientId || Math.random());
+        let p = players.get(id);
+        if (!p) {
+          if (players.size >= MAX_PLAYERS) {
+            safeSend(conn, { type: 'full' });
+            setTimeout(() => conn.close(), 500);
+            return;
+          }
+          p = { id, conn: null, name: '', connected: false, score: 0, lines: 0, qualifiedAt: 0, lastSeen: 0, bumped: 0 };
+          players.set(id, p);
+        } else if (p.conn && p.conn !== conn) {
+          try { p.conn.close(); } catch (e) { /* egal */ }
         }
-        if (i < 0) {
-          safeSend(conn, { type: 'full' });
-          setTimeout(() => conn.close(), 500);
-          return;
+        me = p;
+        p.conn = conn;
+        p.connected = true;
+        p.lastSeen = Date.now();
+        p.name = uniqueName(msg.name, id);
+        // Das Handy meldet seinen aktuellen Punktestand (0 nach Neuladen der Seite)
+        if (!p.qualifiedAt) {
+          p.score = phase === 'lobby' ? 0 : Math.max(0, Number(msg.score) || 0);
+          p.lines = phase === 'lobby' ? 0 : Math.max(0, Number(msg.lines) || 0);
         }
-        const s = slots[i];
-        if (s.conn && s.conn !== conn) { try { s.conn.close(); } catch (e) { /* egal */ } }
-        slotIndex = i;
-        s.conn = conn;
-        s.clientId = String(msg.clientId || Math.random());
-        s.name = String(msg.name || '').trim().slice(0, 16);
-        s.connected = true;
-        s.lastSeen = Date.now();
-        s.kbd = false;
-        safeSend(conn, { type: 'welcome', slot: i, color: PLAYER_COLORS[i], name: playerName(i) });
-        sendState(i);
-        updatePlayerUI();
-        if (phase === 'paused' && pauseReason === 'disconnect' && allConnected()) resume();
-      } else if (msg.type === 'input' && slotIndex >= 0 && slots[slotIndex].conn === conn) {
-        handleInput(slotIndex, msg.a, !!msg.d);
+        safeSend(conn, { type: 'welcome', name: p.name });
+        sendState(p);
+        boardDirty = true;
+        updateLobby();
+        updateDots();
+        if (phase === 'paused' && pauseReason === 'disconnect' && finalistsConnected()) resume();
+      } else if (!me || me.conn !== conn) {
+        return;
+      } else if (msg.type === 'input') {
+        const i = finalists.indexOf(me.id);
+        if (i >= 0 && isDuel()) handleInput(i, msg.a, !!msg.d);
+      } else if (msg.type === 'score') {
+        if (phase !== 'r1' || me.qualifiedAt) return;
+        const score = Math.max(0, Number(msg.score) || 0);
+        if (score > me.score) me.bumped = performance.now();
+        me.score = score;
+        me.lines = Math.max(0, Number(msg.lines) || 0);
+        boardDirty = true;
+        if (me.score >= target) qualify(me);
+      } else if (msg.type === 'reset') {
+        if (phase !== 'r1' || me.qualifiedAt) return;
+        me.score = 0;
+        me.lines = 0;
+        boardDirty = true;
       } else if (msg.type === 'ping') {
         safeSend(conn, { type: 'pong', t: msg.t });
       }
     });
 
-    conn.on('close', () => {
-      if (slotIndex >= 0) dropSlot(slotIndex, conn);
-    });
+    conn.on('close', () => { if (me) dropPlayer(me, conn); });
     conn.on('error', e => console.warn('Verbindungsfehler', e));
   }
 
-  // Verbindung eines Platzes als getrennt markieren
-  function dropSlot(i, conn) {
-    const s = slots[i];
-    if (s.conn !== conn) return;
-    s.connected = false;
-    s.conn = null;
-    inputs[i] = freshInput();
-    if (games[i]) games[i].softDrop = false;
-    if (phase === 'lobby') { s.clientId = null; s.name = ''; }
-    if (phase === 'playing' || phase === 'countdown') pause('disconnect');
-    updatePlayerUI();
+  // Verbindung eines Spielers als getrennt markieren
+  function dropPlayer(p, conn) {
+    if (p.conn !== conn) return;
+    p.connected = false;
+    p.conn = null;
+    const i = finalists.indexOf(p.id);
+    if (i >= 0) {
+      inputs[i] = freshInput();
+      if (games[i]) games[i].softDrop = false;
+      if (phase === 'playing' || phase === 'countdown') pause('disconnect');
+    }
+    if (phase === 'lobby') players.delete(p.id);
+    boardDirty = true;
+    updateLobby();
+    updateDots();
     try { conn.close(); } catch (e) { /* egal */ }
   }
 
   // Handys senden jede Sekunde ein Ping – bleibt es aus, gilt das Handy als getrennt
   setInterval(() => {
-    slots.forEach((s, i) => {
-      if (s.connected && Date.now() - s.lastSeen > 5000) dropSlot(i, s.conn);
-    });
+    for (const p of players.values()) {
+      if (p.connected && Date.now() - p.lastSeen > 5000) dropPlayer(p, p.conn);
+    }
   }, 1000);
 
-  function allConnected() {
-    return slots.every(s => !s.clientId || s.connected);
+  function finalistsConnected() {
+    return [0, 1].every(i => { const p = finalist(i); return !p || p.connected; });
   }
 
   function safeSend(conn, msg) {
     try { if (conn && conn.open) conn.send(msg); } catch (e) { /* egal */ }
   }
 
-  function send(i, msg) {
-    if (slots[i].connected) safeSend(slots[i].conn, msg);
-  }
-
-  function sendState(i, extra) {
-    const g = games[i];
+  function sendState(p, extra) {
+    if (!p || !p.connected) return;
+    const slot = finalists.indexOf(p.id);
     let result = null;
-    if (phase === 'over' && lastResult) {
-      result = lastResult.winner === -1 ? 'draw' : (lastResult.winner === i ? 'win' : 'lose');
+    if (phase === 'over' && lastResult && slot >= 0) {
+      result = lastResult.winner === -1 ? 'draw' : (lastResult.winner === slot ? 'win' : 'lose');
     }
-    send(i, Object.assign({
-      type: 'state', phase, pauseReason, slot: i, name: playerName(i),
-      opponent: playerName(1 - i), rounds: [rounds[i], rounds[1 - i]], result,
-      score: g ? g.score : 0, lines: g ? g.lines : 0, level: g ? g.level : 1,
+    const g = slot >= 0 ? games[slot] : null;
+    safeSend(p.conn, Object.assign({
+      type: 'state', phase, pausedFrom, pauseReason, target, seed: r1Seed,
+      name: p.name, players: players.size,
+      qualified: !!p.qualifiedAt, slot,
+      finalists: [finalistName(0), finalistName(1)],
+      color: slot >= 0 ? PLAYER_COLORS[slot] : null,
+      rounds: slot >= 0 ? [rounds[slot], rounds[1 - slot]] : rounds,
+      result, duelScore: g ? g.score : 0,
     }, extra || {}));
   }
 
   function broadcastState(extra) {
-    sendState(0, extra);
-    sendState(1, extra);
+    for (const p of players.values()) sendState(p, extra);
   }
 
-  // ---------- Eingaben ----------
+  // ---------- Runde 1 ----------
+  function connectedCount() {
+    return [...players.values()].filter(p => p.connected).length;
+  }
+
+  function startR1() {
+    if (phase !== 'lobby' || connectedCount() < 2) return;
+    target = Math.max(100, Math.min(100000, Math.round(Number($('#target').value) || 100)));
+    $('#target').value = target;
+    document.querySelectorAll('.target').forEach(el => { el.textContent = target.toLocaleString('de-DE'); });
+    r1Seed = (Math.random() * 2 ** 32) >>> 0;
+    qualified = [];
+    finalists = [null, null];
+    for (const p of players.values()) { p.score = 0; p.lines = 0; p.qualifiedAt = 0; }
+    show('quali');
+    boardDirty = true;
+    requestWakeLock();
+    countdown('r1-countdown', () => { phase = 'r1'; broadcastState(); });
+  }
+
+  function qualify(p) {
+    p.qualifiedAt = qualified.length + 1;
+    qualified.push(p.id);
+    sendState(p);
+    boardDirty = true;
+    if (qualified.length >= 2) endR1();
+  }
+
+  function endR1() {
+    phase = 'r1-done';
+    finalists = [qualified[0], qualified[1]];
+    rounds = [0, 0];
+    renderBoard();
+    $('#f0').textContent = finalistName(0);
+    $('#f1').textContent = finalistName(1);
+    setTimeout(() => { if (phase === 'r1-done') $('#finalists').hidden = false; }, 1200);
+    broadcastState();
+  }
+
+  function renderBoard() {
+    boardDirty = false;
+    const list = [...players.values()].sort((a, b) => {
+      if (a.qualifiedAt || b.qualifiedAt) return (a.qualifiedAt || 99) - (b.qualifiedAt || 99);
+      return b.score - a.score || a.name.localeCompare(b.name);
+    });
+    const n = Math.max(list.length, 1);
+    const cols = n <= 10 ? 1 : n <= 20 ? 2 : 3;
+    const rows = Math.max(Math.ceil(n / cols), 6);
+    const ol = $('#board');
+    ol.style.setProperty('--cols', cols);
+    ol.style.setProperty('--rows', rows);
+    ol.style.setProperty('--fs', `${Math.min(5, 34 / rows)}vh`);
+    const now = performance.now();
+    ol.innerHTML = '';
+    list.forEach((p, k) => {
+      const li = document.createElement('li');
+      if (p.qualifiedAt) li.classList.add('q');
+      if (!p.connected) li.classList.add('off');
+      if (now - p.bumped < 500) li.classList.add('bump');
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      bar.style.width = `${Math.min(100, (p.score / target) * 100)}%`;
+      const rank = document.createElement('span');
+      rank.className = 'rank';
+      rank.textContent = p.qualifiedAt ? ['🥇', '🥈'][p.qualifiedAt - 1] || '✔' : `${k + 1}.`;
+      const nm = document.createElement('span');
+      nm.className = 'nm';
+      nm.textContent = p.name;
+      const pts = document.createElement('span');
+      pts.className = 'pts';
+      pts.textContent = p.score.toLocaleString('de-DE');
+      li.append(bar, rank, nm, pts);
+      ol.append(li);
+    });
+    $('#qPlayers').textContent = connectedCount();
+  }
+
+  // ---------- Runde 2: Duell ----------
   function handleInput(i, action, down) {
     const inp = inputs[i];
     const g = games[i];
@@ -243,22 +362,13 @@
       }
       return;
     }
-    if (action === 'down') {
-      inp.down = down;
-      if (g) g.softDrop = down && active;
-      return;
-    }
     if (!down || !active) return;
     if (action === 'cw') g.rotate(1);
-    else if (action === 'ccw') g.rotate(-1);
-    else if (action === 'drop') g.hardDrop();
-    else if (action === 'hold') g.holdPiece();
   }
 
   function updateAutoRepeat(i, dt) {
     const inp = inputs[i];
     const g = games[i];
-    g.softDrop = inp.down;
     if (!inp.dir) return;
     inp.das += dt;
     if (inp.das < DAS) return;
@@ -269,114 +379,28 @@
     }
   }
 
-  // Tastatur: Lehrkraft + Testspieler
-  const KEYMAP = {
-    KeyA: [0, 'left'], KeyD: [0, 'right'], KeyS: [0, 'down'], KeyW: [0, 'cw'],
-    KeyQ: [0, 'ccw'], KeyE: [0, 'hold'], Space: [0, 'drop'],
-    ArrowLeft: [1, 'left'], ArrowRight: [1, 'right'], ArrowDown: [1, 'down'], ArrowUp: [1, 'cw'],
-    Period: [1, 'ccw'], Slash: [1, 'hold'], Minus: [1, 'hold'], ShiftRight: [1, 'drop'],
-  };
-
-  document.addEventListener('keydown', e => {
-    if (e.target && e.target.tagName === 'INPUT') return;
-    if (e.code === 'Enter' || e.code === 'NumpadEnter') {
-      e.preventDefault();
-      if (phase === 'lobby') startMatch();
-      else if (phase === 'over') startRound();
-      return;
-    }
-    if (e.code === 'KeyP') { togglePause(); return; }
-    if (e.code === 'Escape') { toLobby(); return; }
-    const m = KEYMAP[e.code];
-    if (!m) return;
-    e.preventDefault();
-    if (e.repeat) return;
-    if (!slots[m[0]].connected) { slots[m[0]].kbd = true; updatePlayerUI(); }
-    handleInput(m[0], m[1], true);
-  });
-  document.addEventListener('keyup', e => {
-    const m = KEYMAP[e.code];
-    if (m) handleInput(m[0], m[1], false);
-  });
-
-  // ---------- Spielablauf ----------
-  function startMatch() {
+  function startFinal() {
+    if (phase !== 'r1-done') return;
     rounds = [0, 0];
-    startRound();
+    startDuelRound();
   }
 
-  function startRound() {
+  function startDuelRound() {
     const seed = (Math.random() * 2 ** 32) >>> 0;
     games = [new Game(seed, seed ^ 0x1234567), new Game(seed, seed ^ 0x7654321)];
     inputs[0] = freshInput();
     inputs[1] = freshInput();
     popups[0] = []; popups[1] = [];
     lastResult = null;
-    $('#lobby').hidden = true;
+    show('game');
+    updateDots();
     updateRounds();
     requestWakeLock();
-    countdown(() => { phase = 'playing'; broadcastState(); });
-  }
-
-  function countdown(done) {
-    clearTimeout(countdownTimer);
-    phase = 'countdown';
-    let n = 3;
-    const tick = () => {
-      if (phase !== 'countdown') return;
-      if (n > 0) {
-        showBanner(String(n), '', false);
-        broadcastState({ count: n });
-        n--;
-        countdownTimer = setTimeout(tick, 800);
-      } else {
-        showBanner('LOS!', '', false);
-        countdownTimer = setTimeout(() => { if (phase === 'playing') hideBanner(); }, 600);
-        done();
-      }
-    };
-    tick();
-  }
-
-  function pause(reason) {
-    if (phase !== 'playing' && phase !== 'countdown') return;
-    clearTimeout(countdownTimer);
-    phase = 'paused';
-    pauseReason = reason || 'teacher';
-    for (const g of games) if (g) g.softDrop = false;
-    const sub = reason === 'disconnect'
-      ? 'Ein Handy hat die Verbindung verloren – bitte erneut den QR-Code scannen.'
-      : 'Weiter mit P';
-    showBanner('PAUSE', sub, false);
-    broadcastState();
-  }
-
-  function resume() {
-    if (phase !== 'paused') return;
-    pauseReason = '';
-    countdown(() => { phase = 'playing'; broadcastState(); });
-  }
-
-  function togglePause() {
-    if (phase === 'paused') resume();
-    else pause('teacher');
-  }
-
-  function toLobby() {
-    clearTimeout(countdownTimer);
-    phase = 'lobby';
-    pauseReason = '';
-    games = [null, null];
-    rounds = [0, 0];
-    for (const s of slots) {
-      if (!s.connected) { s.clientId = null; s.name = ''; }
-      s.kbd = false;
-    }
-    hideBanner();
-    $('#lobby').hidden = false;
-    updatePlayerUI();
-    updateRounds();
-    broadcastState();
+    countdown('countdown', () => {
+      phase = 'playing';
+      broadcastState();
+      if (!finalistsConnected()) pause('disconnect');
+    });
   }
 
   function finishRound() {
@@ -388,16 +412,15 @@
     lastResult = { winner };
     phase = 'over';
     updateRounds();
-    if (winner >= 0) {
-      showBanner(`${playerName(winner)} gewinnt!`, `Stand ${rounds[0]} : ${rounds[1]}`, true, PLAYER_COLORS[winner]);
-    } else {
-      showBanner('Unentschieden!', `Stand ${rounds[0]} : ${rounds[1]}`, true);
-    }
+    const sub = `Stand ${rounds[0]} : ${rounds[1]}`;
+    if (winner >= 0) showBanner(`${finalistName(winner)} gewinnt!`, sub, true, PLAYER_COLORS[winner]);
+    else showBanner('Unentschieden!', sub, true);
     broadcastState();
   }
 
   function handleEvents(i) {
     const g = games[i];
+    const p = finalist(i);
     for (const ev of g.takeEvents()) {
       if (ev.type === 'clear') {
         const words = ['', '', 'DOPPEL', 'TRIPLE', 'TETRIS!'];
@@ -408,11 +431,11 @@
           games[1 - i].receiveGarbage(ev.attack);
           addPopup(i, `+${ev.attack} ➜`, '#ff4d5e');
         }
-        send(i, { type: 'fx', k: 'clear', n: ev.lines });
+        if (p) safeSend(p.conn, { type: 'fx', k: 'clear', n: ev.lines });
       } else if (ev.type === 'garbage') {
-        send(i, { type: 'fx', k: 'hit', n: ev.lines });
+        if (p) safeSend(p.conn, { type: 'fx', k: 'hit', n: ev.lines });
       } else if (ev.type === 'lock') {
-        send(i, { type: 'score', score: g.score, lines: g.lines, level: g.level });
+        if (p) safeSend(p.conn, { type: 'score', score: g.score, lines: g.lines, level: g.level });
       }
     }
   }
@@ -421,6 +444,115 @@
     popups[i].push({ text, color, t: 0 });
     if (popups[i].length > 4) popups[i].shift();
   }
+
+  // ---------- Ablauf: Countdown, Pause, Lobby ----------
+  function countdown(cdPhase, done) {
+    clearTimeout(countdownTimer);
+    phase = cdPhase;
+    let n = 3;
+    const tick = () => {
+      if (phase !== cdPhase) return;
+      if (n > 0) {
+        showBanner(String(n), cdPhase === 'r1-countdown' ? 'Runde 1 – alle aufs Handy schauen!' : '', false);
+        broadcastState({ count: n });
+        n--;
+        countdownTimer = setTimeout(tick, 900);
+      } else {
+        showBanner('LOS!', '', false);
+        done();
+        countdownTimer = setTimeout(() => { if (phase === 'playing' || phase === 'r1') hideBanner(); }, 600);
+      }
+    };
+    tick();
+  }
+
+  function pause(reason) {
+    let from;
+    if (phase === 'r1' || phase === 'r1-countdown') from = 'r1';
+    else if (phase === 'playing' || phase === 'countdown') from = 'playing';
+    else return;
+    clearTimeout(countdownTimer);
+    pausedFrom = from;
+    phase = 'paused';
+    pauseReason = reason || 'teacher';
+    for (const g of games) if (g) g.softDrop = false;
+    const sub = reason === 'disconnect'
+      ? 'Ein Handy hat die Verbindung verloren – bitte die Seite am Handy neu laden oder den QR-Code erneut scannen.'
+      : 'Weiter mit P';
+    showBanner('PAUSE', sub, false);
+    broadcastState();
+  }
+
+  function resume() {
+    if (phase !== 'paused') return;
+    const to = pausedFrom;
+    pauseReason = '';
+    countdown(to === 'r1' ? 'r1-countdown' : 'countdown', () => {
+      phase = to;
+      pausedFrom = '';
+      broadcastState();
+    });
+  }
+
+  function togglePause() {
+    if (phase === 'paused') resume();
+    else pause('teacher');
+  }
+
+  function toLobby() {
+    clearTimeout(countdownTimer);
+    phase = 'lobby';
+    pausedFrom = '';
+    pauseReason = '';
+    games = [null, null];
+    rounds = [0, 0];
+    qualified = [];
+    finalists = [null, null];
+    for (const [id, p] of players) {
+      if (!p.connected) players.delete(id);
+      else { p.score = 0; p.lines = 0; p.qualifiedAt = 0; }
+    }
+    show('lobby');
+    updateLobby();
+    updateRounds();
+    broadcastState();
+  }
+
+  function confirmLobby() {
+    if (phase === 'lobby') return;
+    if (phase === 'over' || phase === 'r1-done' || confirm('Spiel abbrechen und zurück zur Lobby?')) toLobby();
+  }
+
+  // ---------- Tastatur ----------
+  const KEYMAP = {
+    KeyA: [0, 'left'], KeyD: [0, 'right'], KeyW: [0, 'cw'],
+    ArrowLeft: [1, 'left'], ArrowRight: [1, 'right'], ArrowUp: [1, 'cw'],
+  };
+
+  document.addEventListener('keydown', e => {
+    if (e.target && e.target.tagName === 'INPUT') {
+      if (e.key === 'Enter') { e.target.blur(); startR1(); }
+      return;
+    }
+    if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+      e.preventDefault();
+      if (phase === 'lobby') startR1();
+      else if (phase === 'r1-done') startFinal();
+      else if (phase === 'over') startDuelRound();
+      return;
+    }
+    if (e.code === 'KeyP') { togglePause(); return; }
+    if (e.code === 'Escape') { confirmLobby(); return; }
+    const m = KEYMAP[e.code];
+    if (!m || !isDuel()) return;
+    e.preventDefault();
+    if (e.repeat) return;
+    handleInput(m[0], m[1], true);
+  });
+  document.addEventListener('keyup', e => {
+    const m = KEYMAP[e.code];
+    if (m && isDuel()) handleInput(m[0], m[1], false);
+  });
 
   // ---------- Hauptschleife ----------
   let last = performance.now();
@@ -436,15 +568,18 @@
       handleEvents(1);
       if (games[0].over || games[1].over) finishRound();
     }
-    for (let i = 0; i < 2; i++) {
-      popups[i].forEach(p => { p.t += dt; });
-      popups[i] = popups[i].filter(p => p.t < 1400);
-      drawPlayer(i);
+    if (isDuel()) {
+      for (let i = 0; i < 2; i++) {
+        popups[i].forEach(p => { p.t += dt; });
+        popups[i] = popups[i].filter(p => p.t < 1400);
+        drawPlayer(i);
+      }
     }
+    if (boardDirty && !$('#quali').hidden) renderBoard();
     requestAnimationFrame(loop);
   }
 
-  // ---------- Darstellung ----------
+  // ---------- Darstellung Duell ----------
   const canvases = [$('#p0 canvas'), $('#p1 canvas')];
   const ctxs = canvases.map(c => c.getContext('2d'));
   const SIDE = 5, GAP1 = 0.4, METER = 0.6, GAP2 = 0.25;
@@ -452,7 +587,7 @@
   let cell = 30;
 
   function resize() {
-    const header = $('.pname').getBoundingClientRect().height + innerHeight * 0.04;
+    const header = Math.max(40, $('.pname').getBoundingClientRect().height) + innerHeight * 0.04;
     const byH = (innerHeight - header) / VISIBLE;
     const byW = (innerWidth * 0.82 - Math.max(150, innerWidth * 0.15)) / 2 / TOTAL_W;
     cell = Math.max(8, Math.floor(Math.min(byH, byW)));
@@ -475,80 +610,16 @@
     return { board: 0, meter: (COLS + GAP2) * cell, side: (COLS + GAP2 + METER + GAP1) * cell };
   }
 
-  function block(ctx, x, y, s, color, alpha) {
-    ctx.globalAlpha = alpha === undefined ? 1 : alpha;
-    ctx.fillStyle = color;
-    ctx.fillRect(x + 1, y + 1, s - 2, s - 2);
-    const b = Math.max(2, s * 0.14);
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.fillRect(x + 1, y + 1, s - 2, b);
-    ctx.fillRect(x + 1, y + 1, b, s - 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';
-    ctx.fillRect(x + 1, y + s - 1 - b, s - 2, b);
-    ctx.fillRect(x + s - 1 - b, y + 1, b, s - 2);
-    ctx.globalAlpha = 1;
-  }
-
-  function miniPiece(ctx, type, cx, cy, s, dim) {
-    const cells = SHAPES[type][0];
-    const xs = cells.map(c => c[0]), ys = cells.map(c => c[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-    const w = (maxX - minX + 1) * s, h = (maxY - minY + 1) * s;
-    for (const [x, y] of cells) {
-      block(ctx, cx - w / 2 + (x - minX) * s, cy - h / 2 + (y - minY) * s, s, dim ? '#475569' : COLORS[type]);
-    }
-  }
-
   function drawPlayer(i) {
     const ctx = ctxs[i];
     const c = cell;
     const W = TOTAL_W * c, H = VISIBLE * c;
     const L = layout(i);
     const g = games[i];
-    const pc = PLAYER_COLORS[i];
     ctx.clearRect(0, 0, W, H);
 
-    // Spielfeld
-    ctx.fillStyle = '#070b16';
-    ctx.fillRect(L.board, 0, COLS * c, H);
-    ctx.strokeStyle = 'rgba(80,100,150,0.18)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let x = 1; x < COLS; x++) { ctx.moveTo(L.board + x * c + 0.5, 0); ctx.lineTo(L.board + x * c + 0.5, H); }
-    for (let y = 1; y < VISIBLE; y++) { ctx.moveTo(L.board, y * c + 0.5); ctx.lineTo(L.board + COLS * c, y * c + 0.5); }
-    ctx.stroke();
-
-    if (g) {
-      for (let y = HIDDEN; y < HIDDEN + VISIBLE; y++) {
-        for (let x = 0; x < COLS; x++) {
-          const t = g.board[y][x];
-          if (t) block(ctx, L.board + x * c, (y - HIDDEN) * c, c, g.over ? '#334155' : COLORS[t]);
-        }
-      }
-      if (!g.over && g.current) {
-        const gy = g.ghostY();
-        const ghost = { ...g.current, y: gy };
-        for (const [x, y] of g.cells(ghost)) {
-          if (y < HIDDEN) continue;
-          ctx.strokeStyle = COLORS[g.current.type];
-          ctx.globalAlpha = 0.85;
-          ctx.lineWidth = 3;
-          ctx.strokeRect(L.board + x * c + 2, (y - HIDDEN) * c + 2, c - 4, c - 4);
-          ctx.globalAlpha = 0.22;
-          ctx.fillStyle = COLORS[g.current.type];
-          ctx.fillRect(L.board + x * c + 2, (y - HIDDEN) * c + 2, c - 4, c - 4);
-          ctx.globalAlpha = 1;
-        }
-        // Lock-Verzögerung durch leichtes Abdunkeln sichtbar machen
-        const fade = g.onGround() ? Math.min(g.lockTimer / 500, 1) * 0.35 : 0;
-        for (const [x, y] of g.cells(g.current)) {
-          if (y < HIDDEN) continue;
-          block(ctx, L.board + x * c, (y - HIDDEN) * c, c, COLORS[g.current.type], 1 - fade);
-        }
-      }
-    }
-
-    ctx.strokeStyle = pc;
+    drawBoard(ctx, g, L.board, 0, c);
+    ctx.strokeStyle = PLAYER_COLORS[i];
     ctx.lineWidth = 3;
     ctx.strokeRect(L.board + 1.5, 1.5, COLS * c - 3, H - 3);
 
@@ -577,37 +648,29 @@
       ctx.font = `800 ${Math.round(c * 0.85)}px "Segoe UI", system-ui, sans-serif`;
       ctx.fillText(txt, sx + sw / 2, y * c);
     };
-    const box = (y, h) => {
-      ctx.fillStyle = '#0d1424';
-      ctx.fillRect(sx, y * c, sw, h * c);
-      ctx.strokeStyle = '#24304d';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(sx + 1, y * c + 1, sw - 2, h * c - 2);
-    };
 
-    label('HALTEN', 0.45);
-    box(0.9, 3);
-    if (g && g.hold) miniPiece(ctx, g.hold, sx + sw / 2, 2.4 * c, c * 0.8, !g.canHold);
-
-    label('NÄCHSTE', 4.4);
-    box(4.85, 8.6);
+    label('NÄCHSTE', 0.45);
+    ctx.fillStyle = '#0d1424';
+    ctx.fillRect(sx, 0.9 * c, sw, 8.6 * c);
+    ctx.strokeStyle = '#24304d';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx + 1, 0.9 * c + 1, sw - 2, 8.6 * c - 2);
     if (g) {
       g.nextPieces(3).forEach((t, k) => {
-        miniPiece(ctx, t, sx + sw / 2, (6.3 + k * 2.7) * c, c * (k === 0 ? 0.8 : 0.65));
+        miniPiece(ctx, t, sx + sw / 2, (2.35 + k * 2.7) * c, c * (k === 0 ? 0.8 : 0.65));
       });
     }
 
-    label('PUNKTE', 14.3);
-    value(g ? g.score.toLocaleString('de-DE') : '0', 15.25);
-    label('REIHEN', 16.55);
-    value(g ? String(g.lines) : '0', 17.5);
-    label('LEVEL', 18.8);
-    value(g ? String(g.level) : '1', 19.6);
+    label('PUNKTE', 11.3);
+    value(g ? g.score.toLocaleString('de-DE') : '0', 12.25);
+    label('REIHEN', 13.55);
+    value(g ? String(g.lines) : '0', 14.5);
+    label('LEVEL', 15.8);
+    value(g ? String(g.level) : '1', 16.75);
 
     // Einblendungen (TETRIS!, Combo, Angriff)
     popups[i].forEach((p, k) => {
-      const a = 1 - p.t / 1400;
-      ctx.globalAlpha = Math.max(0, a);
+      ctx.globalAlpha = Math.max(0, 1 - p.t / 1400);
       ctx.fillStyle = p.color;
       ctx.font = `900 ${Math.round(c * 1.1)}px "Segoe UI", system-ui, sans-serif`;
       ctx.shadowColor = 'rgba(0,0,0,0.9)';
@@ -618,26 +681,35 @@
     });
 
     // Ergebnis auf dem Feld
-    if (g && phase === 'over') {
-      const won = lastResult && lastResult.winner === i;
+    if (g && phase === 'over' && lastResult) {
+      const won = lastResult.winner === i;
+      const draw = lastResult.winner === -1;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(L.board, H * 0.15 - 1.6 * c, COLS * c, 3.2 * c);
-      ctx.fillStyle = won ? '#2ecc71' : (lastResult && lastResult.winner === -1 ? '#e8ecf8' : '#ff4d5e');
+      ctx.fillStyle = won ? '#2ecc71' : (draw ? '#e8ecf8' : '#ff4d5e');
       ctx.font = `900 ${Math.round(c * 1.6)}px "Segoe UI", system-ui, sans-serif`;
-      const t = won ? 'SIEG' : (lastResult && lastResult.winner === -1 ? 'REMIS' : 'K.O.');
-      ctx.fillText(t, L.board + COLS * c / 2, H * 0.15);
+      ctx.fillText(won ? 'SIEG' : (draw ? 'REMIS' : 'K.O.'), L.board + COLS * c / 2, H * 0.15);
     }
   }
 
   // ---------- Oberfläche ----------
-  function showBanner(text, sub, withButton, color) {
+  function show(view) {
+    $('#lobby').hidden = view !== 'lobby';
+    $('#quali').hidden = view !== 'quali';
+    $('#game').hidden = view !== 'game';
+    $('#finalists').hidden = true;
+    hideBanner();
+    if (view === 'game') resize();
+  }
+
+  function showBanner(text, sub, withButtons, color) {
     const b = $('#banner');
     b.hidden = false;
-    b.classList.toggle('result', !!withButton);
+    b.classList.toggle('result', !!withButtons);
     $('#bannerText').textContent = text;
     $('#bannerText').style.color = color || '';
     $('#bannerSub').textContent = sub || '';
-    $('#btnNext').hidden = !withButton;
+    $('#resultButtons').hidden = !withButtons;
   }
 
   function hideBanner() {
@@ -649,23 +721,48 @@
     $('#r1').textContent = rounds[1];
   }
 
-  function updatePlayerUI() {
+  function updateDots() {
     for (let i = 0; i < 2; i++) {
-      const s = slots[i];
+      const p = finalist(i);
       const sec = $('#p' + i);
-      $('.name', sec).textContent = playerName(i);
+      $('.name', sec).textContent = finalistName(i);
       const dot = $('.dot', sec);
-      dot.className = 'dot ' + (s.connected ? 'on' : s.clientId ? 'off' : s.kbd ? 'kbd' : '');
-      dot.title = s.connected ? 'Handy verbunden' : s.clientId ? 'Handy getrennt' : 'Tastatur';
-      const card = $('#card' + i);
-      card.classList.toggle('joined', s.connected);
-      $('.status', card).textContent = s.connected ? `✔ ${playerName(i)}` : 'Wartet …';
-      $('.kick', card).hidden = !s.connected;
+      dot.className = 'dot ' + (p ? (p.connected ? 'on' : 'off') : 'kbd');
+      dot.title = p ? (p.connected ? 'Handy verbunden' : 'Handy getrennt') : 'Tastatur';
     }
-    const n = slots.filter(s => s.connected).length;
-    $('#startHint').textContent = n === 2
-      ? 'Beide Spieler sind bereit!'
-      : 'Ohne Handy kann ein Platz zum Testen per Tastatur gespielt werden (siehe Hilfe).';
+  }
+
+  function updateLobby() {
+    const ul = $('#chips');
+    ul.innerHTML = '';
+    const list = [...players.values()];
+    if (!list.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'Noch niemand – scannt den QR-Code!';
+      ul.append(li);
+    }
+    for (const p of list) {
+      const li = document.createElement('li');
+      li.textContent = p.name;
+      if (!p.connected) li.classList.add('off');
+      li.title = 'Antippen zum Entfernen';
+      li.addEventListener('click', () => kick(p));
+      ul.append(li);
+    }
+    const n = connectedCount();
+    $('#count').textContent = n;
+    $('#btnStart').disabled = n < 2;
+    $('#startHint').textContent = n < 2 ? 'Mindestens 2 Spieler/innen nötig.' : 'Startet, sobald genug dabei sind.';
+  }
+
+  function kick(p) {
+    if (phase !== 'lobby') return;
+    const c = p.conn;
+    safeSend(c, { type: 'kicked' });
+    players.delete(p.id);
+    setTimeout(() => { try { c && c.close(); } catch (e) { /* egal */ } }, 300);
+    updateLobby();
   }
 
   let wakeLock = null;
@@ -681,29 +778,25 @@
     if (document.visibilityState === 'visible' && phase !== 'lobby') requestWakeLock();
   });
 
-  document.querySelectorAll('.kick').forEach(btn => btn.addEventListener('click', () => {
-    const s = slots[Number(btn.dataset.slot)];
-    const c = s.conn;
-    safeSend(c, { type: 'kicked' });
-    s.conn = null; s.connected = false; s.clientId = null; s.name = '';
-    setTimeout(() => { try { c && c.close(); } catch (e) { /* egal */ } }, 300);
-    updatePlayerUI();
-  }));
-
-  $('#btnStart').addEventListener('click', e => { e.currentTarget.blur(); if (phase === 'lobby') startMatch(); });
-  $('#btnNext').addEventListener('click', e => { e.currentTarget.blur(); if (phase === 'over') startRound(); });
-  $('#btnPause').addEventListener('click', e => { e.currentTarget.blur(); togglePause(); });
-  $('#btnLobby').addEventListener('click', e => { e.currentTarget.blur(); toLobby(); });
-  $('#btnFull').addEventListener('click', e => {
+  const onClick = (sel, fn) => document.querySelectorAll(sel).forEach(el => el.addEventListener('click', e => {
     e.currentTarget.blur();
+    fn();
+  }));
+  onClick('#btnStart', startR1);
+  onClick('#btnFinal', startFinal);
+  onClick('#btnBackQ', toLobby);
+  onClick('#btnNext', () => { if (phase === 'over') startDuelRound(); });
+  onClick('#btnNew', toLobby);
+  onClick('#btnPause, #btnPauseQ', togglePause);
+  onClick('#btnLobby, #btnLobbyQ', confirmLobby);
+  onClick('.btnFull', () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen().catch(() => {});
   });
 
   // ---------- Start ----------
   if (location.protocol === 'file:') $('#fileWarn').hidden = false;
-  updatePlayerUI();
-  resize();
+  updateLobby();
   requestAnimationFrame(loop);
   let saved = null;
   try { saved = sessionStorage.getItem('tetrisRoom'); } catch (e) { /* egal */ }

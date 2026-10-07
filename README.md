@@ -1,71 +1,65 @@
-# Tetris-Duell für den Unterricht
+# Tetris-Klassenturnier für den Unterricht
 
-Zwei Schülerinnen/Schüler spielen Tetris gegeneinander. Das Spielfeld läuft auf dem Laptop der Lehrkraft (Beamer), gesteuert wird mit den eigenen Smartphones. Es muss nichts installiert werden: Die Handys scannen einen QR-Code und werden zum Gamepad.
+Die ganze Klasse spielt Tetris mit den eigenen Smartphones, der Laptop der Lehrkraft zeigt alles am Beamer. Es muss nichts installiert werden: Alle scannen einen QR-Code.
 
-- **Beamer (`index.html`)**: beide Spielfelder, Rundenstand, QR-Codes zum Beitreten
-- **Handy (`controller.html`)**: große Touch-Tasten, Vibration, Anzeige von Sieg/Niederlage
-- **Duell-Modus**: Wer 2 oder mehr Reihen auf einmal löscht, schickt Müllzeilen zum Gegner (2 → 1, 3 → 2, Tetris → 4, dazu Combo- und Back-to-Back-Bonus). Wer oben anstößt, verliert die Runde.
-- Beide bekommen dieselbe Steinfolge – es zählt nur das Können.
+- **Runde 1 – Qualifikation:** Bis zu 30 SuS spielen gleichzeitig Tetris **auf ihrem Handy** (Spielfeld + 3 Knöpfe: ◀ ↻ ▶). Am Beamer läuft eine Live-Rangliste. Die **ersten zwei**, die die Zielpunktzahl erreichen, kommen ins Finale. Wer vollläuft, bekommt ein neues Feld und beginnt wieder bei 0 Punkten.
+- **Runde 2 – Finale:** Die beiden Finalisten spielen am Beamer gegeneinander, gesteuert mit ihren Handys (wieder ◀ ↻ ▶). Wer 2 oder mehr Reihen auf einmal löscht, schickt Müllzeilen zum Gegner (2 → 1, 3 → 2, Tetris → 4). Wer oben anstößt, verliert. Alle anderen sehen auf dem Handy „Schau auf den Beamer“.
+- Alle bekommen dieselbe Steinfolge – es zählt nur das Können.
+
+Punkte (Standard-Tetris): 1 Reihe = 100, 2 Reihen = 300, 3 Reihen = 500, 4 Reihen = 800 – jeweils mal Level. Das Level steigt alle 10 Reihen bzw. alle 45 Sekunden (die Steine fallen dann schneller).
 
 ## Einmalig einrichten (GitHub Pages)
 
-Die Handys brauchen eine Internetadresse, unter der das Spiel erreichbar ist. Am einfachsten über GitHub Pages:
+Die Handys brauchen eine Internetadresse, unter der das Spiel erreichbar ist:
 
 1. Im Repository auf **Settings → Pages** gehen.
-2. Bei **Source** „Deploy from a branch“ wählen, den Branch (z. B. `main`) und den Ordner `/ (root)` auswählen, **Save**.
-3. Nach ca. einer Minute ist das Spiel erreichbar unter
-   `https://klawittersven-arch.github.io/Tetris/`
+2. Bei **Source** „Deploy from a branch“ wählen, den Branch und den Ordner `/ (root)` auswählen, **Save**.
+3. Nach ca. einer Minute ist das Spiel erreichbar unter `https://klawittersven-arch.github.io/Tetris/`
 
-Hinweis: GitHub Pages ist für öffentliche Repositories kostenlos. Bei einem privaten Repository braucht man ein kostenpflichtiges GitHub-Konto – oder man lädt die Dateien auf einen anderen Webspace (es sind nur statische Dateien).
+GitHub Pages ist für öffentliche Repositories kostenlos (bei privaten braucht man ein kostenpflichtiges Konto oder einen anderen Webspace – es sind nur statische Dateien).
 
 ## Ablauf im Unterricht
 
-1. Laptop an den Beamer, die Seite öffnen und mit **F11** auf Vollbild schalten.
-2. Zwei SuS scannen jeweils „ihren“ QR-Code (Spieler 1 / Spieler 2), geben ihren Namen ein und tippen auf **Mitspielen**. Die Karte wird grün.
-   Alternativ: `…/controller.html` im Handy-Browser öffnen und den 5-stelligen Code eingeben.
-3. **Spiel starten** (oder Enter). Nach dem Countdown geht es los.
-4. Nach jeder Runde: **Nächste Runde** (Enter). Der Rundenstand steht in der Mitte.
-5. Für den nächsten Durchgang: **Lobby** (oder Esc) → die Plätze werden frei, neue SuS können beitreten. Mit **Entfernen** kann ein Platz in der Lobby freigegeben werden.
+1. Laptop an den Beamer, die Seite öffnen, mit **F11** Vollbild.
+2. **Lobby:** Alle scannen den QR-Code, geben ihren Namen ein und tippen **Mitspielen**. Die Namen erscheinen am Beamer (gleiche Namen werden durchnummeriert). Antippen eines Namens entfernt die Person.
+3. **Zielpunktzahl** einstellen (Standard 100 = eine gelöschte Reihe; für längere Runden z. B. 500 oder 1000).
+4. **Runde 1 starten** (Enter), sobald genug SuS dabei sind (mind. 2). Nach dem Countdown spielen alle auf dem Handy. Nachzügler können über den kleinen QR-Code oben rechts noch einsteigen.
+5. Haben zwei SuS das Ziel erreicht, zeigt der Beamer **„FINALE: A vs. B“**. **Finale starten** (Enter).
+6. Nach dem Finale: **Revanche** (Enter, gleiche Finalisten, Rundenstand zählt weiter) oder **Neues Spiel** (Esc → zurück zur Lobby, alle bleiben verbunden).
 
 ### Tasten für die Lehrkraft
 
 | Taste | Funktion |
 |---|---|
-| Enter | Spiel starten / nächste Runde |
-| P | Pause / weiter |
-| Esc | zurück zur Lobby (Rundenstand wird zurückgesetzt) |
+| Enter | Runde 1 starten / Finale starten / Revanche |
+| P | Pause / weiter (in beiden Runden) |
+| Esc | zurück zur Lobby / neues Spiel |
 | F11 | Vollbild |
 
-Verliert ein Handy die Verbindung (z. B. Bildschirm aus), pausiert das Spiel automatisch. Sobald das Handy wieder verbunden ist (Seite neu laden oder QR-Code erneut scannen), geht es nach einem Countdown weiter.
+Verliert ein Finalisten-Handy die Verbindung, pausiert das Finale automatisch und geht weiter, sobald das Handy wieder verbunden ist (Seite neu laden oder QR-Code erneut scannen).
 
-### Steuerung am Handy
+### Testen ohne Handys (nur Finale)
 
-◀ ▶ bewegen (gedrückt halten = weiterlaufen) · ▼ schneller fallen · ↻ drehen · ↺ andersherum drehen · ⇄ Stein halten (tauschen) · ⤓ sofort fallen lassen
-
-### Testen ohne Handys
-
-Ein Platz ohne Handy kann per Tastatur gespielt werden:
-
-- **Spieler 1:** A / D bewegen, S schneller, W drehen, Q andersherum, E halten, Leertaste fallen lassen
-- **Spieler 2:** ← / → bewegen, ↓ schneller, ↑ drehen, `.` andersherum, `-` halten, rechte Shift-Taste fallen lassen
+Spieler 1: A / D bewegen, W drehen · Spieler 2: ← / → bewegen, ↑ drehen
 
 ## Technik & Fehlerbehebung
 
-- Das Spiel ist reines HTML/JavaScript ohne Server. Die Handys verbinden sich per **WebRTC** direkt mit dem Laptop; der kostenlose öffentliche PeerJS-Server (`0.peerjs.com`) vermittelt nur den Verbindungsaufbau. Laptop und Handys brauchen dafür Internet.
+- Reines HTML/JavaScript ohne eigenen Server. Die Handys verbinden sich per **WebRTC** direkt mit dem Laptop; der kostenlose öffentliche PeerJS-Server (`0.peerjs.com`) vermittelt nur den Verbindungsaufbau. Laptop und Handys brauchen dafür Internet.
 - **Am zuverlässigsten**: Laptop und Handys im selben WLAN.
-- **„Raum nicht gefunden“**: Ist die Beamer-Seite offen und zeigt „Bereit – Handys können beitreten“? Code richtig eingegeben?
-- **Handys verbinden sich nicht, obwohl der Raum gefunden wird**: Manche Schulnetze blockieren WebRTC-Verbindungen zwischen Geräten. Dann hilft es oft, wenn die Handys mobile Daten statt des Schul-WLANs nutzen (oder der Laptop über einen Handy-Hotspot ins Netz geht).
-- Die Seite nicht als lokale Datei (`file://…`) öffnen, sonst können die Handys den QR-Code nicht nutzen.
-- Eigener PeerJS-Server (optional, für Fortgeschrittene): `index.html?server=mein-server.de:443` – die Adresse wird automatisch an die Handys weitergegeben.
+- **„Raum nicht gefunden“**: Ist die Beamer-Seite offen und zeigt „Bereit – Handys können beitreten“?
+- **Handys verbinden sich nicht, obwohl der Raum gefunden wird**: Manche Schulnetze blockieren WebRTC zwischen Geräten. Dann hilft oft, wenn die Handys mobile Daten nutzen (oder der Laptop über einen Handy-Hotspot ins Netz geht).
+- Die Seite nicht als lokale Datei (`file://…`) öffnen, sonst funktioniert der QR-Code nicht.
+- Eigener PeerJS-Server (optional): `index.html?server=mein-server.de:443` – wird automatisch an die Handys weitergegeben.
 
 ### Dateien
 
 ```
-index.html          Beamer-Ansicht
-controller.html     Handy-Gamepad
-js/tetris.js        Spiellogik (SRS-Drehung, 7-Bag, Hold, Ghost, Müllzeilen)
-js/host.js          Verbindungen, Spielablauf, Darstellung am Beamer
-js/controller.js    Handy-Steuerung
+index.html          Beamer: Lobby, Rangliste (Runde 1), Finale (Runde 2)
+controller.html     Handy: eigenes Spiel (Runde 1) bzw. Steuerung (Finale)
+js/tetris.js        Spiellogik (SRS-Drehung, 7-Bag, Müllzeilen)
+js/render.js        Zeichnen von Spielfeld und Steinen (Beamer + Handy)
+js/host.js          Verbindungen, Ablauf beider Runden, Darstellung am Beamer
+js/controller.js    Handy: Verbindung, lokales Spiel, Knöpfe
 css/                Gestaltung
 vendor/             PeerJS 1.5.4 und qrcodejs 1.0.0 (MIT-Lizenz)
 ```
