@@ -364,6 +364,7 @@
     }
     if (!down || !active) return;
     if (action === 'cw') g.rotate(1);
+    else if (action === 'drop') g.hardDrop();
   }
 
   function updateAutoRepeat(i, dt) {
@@ -525,8 +526,8 @@
 
   // ---------- Tastatur ----------
   const KEYMAP = {
-    KeyA: [0, 'left'], KeyD: [0, 'right'], KeyW: [0, 'cw'],
-    ArrowLeft: [1, 'left'], ArrowRight: [1, 'right'], ArrowUp: [1, 'cw'],
+    KeyA: [0, 'left'], KeyD: [0, 'right'], KeyW: [0, 'cw'], KeyS: [0, 'drop'],
+    ArrowLeft: [1, 'left'], ArrowRight: [1, 'right'], ArrowUp: [1, 'cw'], ArrowDown: [1, 'drop'],
   };
 
   document.addEventListener('keydown', e => {

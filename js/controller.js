@@ -263,7 +263,7 @@
       case 'r1-countdown':
         setView('field');
         updateInfo();
-        setStatus(s.count ? String(s.count) : '', true, true);
+        setStatus(s.count ? `${s.count}<small>Tipp aufs Spielfeld = Stein fallen lassen</small>` : '', true, true);
         if (s.count) vibrate(20);
         break;
       case 'r1':
@@ -326,7 +326,7 @@
       setStatus(s.count ? String(s.count) : '', true);
       if (s.count) vibrate(20);
     } else if (s.phase === 'playing') {
-      setStatus(`FINALE<small>gegen ${opp} – schau auf den Beamer!</small>`);
+      setStatus(`FINALE<small>gegen ${opp} – schau auf den Beamer!<br><br>👆 Hier tippen = Stein fallen lassen</small>`);
       if (prev === 'countdown') vibrate(80);
     } else if (s.phase === 'paused') {
       setStatus(s.pauseReason === 'disconnect' ? 'PAUSE<small>Warte auf die Verbindung …</small>' : 'PAUSE');
@@ -555,6 +555,27 @@
       }
     } catch (e) { /* nicht unterstützt */ }
   }
+
+  // Tippen in die Bildschirmmitte (Spielfeld bzw. Statusfläche) = Stein sofort fallen lassen
+  $('#stage').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (!st) return;
+    let dropped = false;
+    if (st.phase === 'r1' && running && game && !game.over) {
+      game.hardDrop();
+      dropped = true;
+    } else if (st.phase === 'playing' && st.slot >= 0) {
+      send({ type: 'input', a: 'drop', d: true });
+      dropped = true;
+    }
+    if (dropped) {
+      vibrate(15);
+      const stage = $('#stage');
+      stage.classList.remove('tap');
+      void stage.offsetWidth;
+      stage.classList.add('tap');
+    }
+  });
 
   // Zugriff für automatische Tests
   window.__tetris = { get game() { return game; }, send };

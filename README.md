@@ -2,8 +2,8 @@
 
 Die ganze Klasse spielt Tetris mit den eigenen Smartphones, der Laptop der Lehrkraft zeigt alles am Beamer. Es muss nichts installiert werden: Alle scannen einen QR-Code.
 
-- **Runde 1 – Qualifikation:** Bis zu 30 SuS spielen gleichzeitig Tetris **auf ihrem Handy** (Spielfeld + 3 Knöpfe: ◀ ↻ ▶). Am Beamer läuft eine Live-Rangliste. Die **ersten zwei**, die die Zielpunktzahl erreichen, kommen ins Finale. Wer vollläuft, bekommt ein neues Feld und beginnt wieder bei 0 Punkten.
-- **Runde 2 – Finale:** Die beiden Finalisten spielen am Beamer gegeneinander, gesteuert mit ihren Handys (wieder ◀ ↻ ▶). Wer 2 oder mehr Reihen auf einmal löscht, schickt Müllzeilen zum Gegner (2 → 1, 3 → 2, Tetris → 4). Wer oben anstößt, verliert. Alle anderen sehen auf dem Handy „Schau auf den Beamer“.
+- **Runde 1 – Qualifikation:** Bis zu 30 SuS spielen gleichzeitig Tetris **auf ihrem Handy** (Spielfeld + 3 Knöpfe: ◀ ↻ ▶; Tippen aufs Spielfeld lässt den Stein sofort fallen). Am Beamer läuft eine Live-Rangliste. Die **ersten zwei**, die die Zielpunktzahl erreichen, kommen ins Finale. Wer vollläuft, bekommt ein neues Feld und beginnt wieder bei 0 Punkten.
+- **Runde 2 – Finale:** Die beiden Finalisten spielen am Beamer gegeneinander, gesteuert mit ihren Handys (wieder ◀ ↻ ▶, Tippen in die Bildschirmmitte = Stein fallen lassen). Wer 2 oder mehr Reihen auf einmal löscht, schickt Müllzeilen zum Gegner (2 → 1, 3 → 2, Tetris → 4). Wer oben anstößt, verliert. Alle anderen sehen auf dem Handy „Schau auf den Beamer“.
 - Alle bekommen dieselbe Steinfolge – es zählt nur das Können.
 
 Punkte (Standard-Tetris): 1 Reihe = 100, 2 Reihen = 300, 3 Reihen = 500, 4 Reihen = 800 – jeweils mal Level. Das Level steigt alle 10 Reihen bzw. alle 45 Sekunden (die Steine fallen dann schneller).
@@ -40,7 +40,7 @@ Verliert ein Finalisten-Handy die Verbindung, pausiert das Finale automatisch un
 
 ### Testen ohne Handys (nur Finale)
 
-Spieler 1: A / D bewegen, W drehen · Spieler 2: ← / → bewegen, ↑ drehen
+Spieler 1: A / D bewegen, W drehen, S fallen lassen · Spieler 2: ← / → bewegen, ↑ drehen, ↓ fallen lassen
 
 ## Technik & Fehlerbehebung
 

@@ -90,3 +90,6 @@ input:focus { outline: none; border-color: var(--accent); }
 #pad.inactive .btn { opacity: .45; }
 .status small { display: block; font-size: 17px; font-weight: 600; color: var(--muted); margin-top: 6px; }
 .status .hl { color: var(--accent); }
+#stage { touch-action: none; border-radius: 14px; }
+#stage.tap { animation: tap .25s; }
+@keyframes tap { 0% { background: rgba(255,255,255,.12); } 100% { background: transparent; } }
