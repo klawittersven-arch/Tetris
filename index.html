@@ -62,6 +62,7 @@
         <div class="qr" id="qrMain"></div>
         <p class="manual"><b id="joinUrl">…</b><br>Code: <b class="roomcode big">·····</b></p>
         <div id="netStatus" class="net">Verbinde mit dem Server …</div>
+        <button id="btnNewRoom" class="small" title="Neuen Raumcode erzeugen">Neuer Raum</button>
       </div>
       <div class="listbox">
         <h2><span id="count">0</span> / 30 dabei</h2>
@@ -108,10 +109,11 @@
     </div>
   </div>
 
-  <script src="vendor/peerjs.min.js"></script>
+  <script src="vendor/mqtt.min.js"></script>
   <script src="vendor/qrcode.min.js"></script>
   <script src="js/tetris.js"></script>
   <script src="js/render.js"></script>
+  <script src="js/net.js"></script>
   <script src="js/host.js"></script>
 </body>
 </html>

@@ -1,35 +1,28 @@
 /*
- * Handy: verbindet sich per PeerJS mit dem Beamer.
+ * Handy: verbindet sich über einen MQTT-Nachrichtenserver mit dem Beamer.
  * Runde 1: eigenes Tetris läuft auf dem Handy, nur der Punktestand geht an den Beamer.
  * Runde 2: die beiden Finalisten senden nur Tastendrücke, das Duell läuft am Beamer.
  */
 (function () {
   'use strict';
 
-  const PREFIX = 'tetris-duell-';
   const $ = s => document.querySelector(s);
   const params = new URLSearchParams(location.search);
+  const brokerFromUrl = params.get('b') || params.get('broker') || '';
+  const HOST_TIMEOUT = 9000;   // ms ohne Antwort vom Beamer = Verbindung verloren
+  const HELLO_WAIT = 4000;     // ms warten auf die Antwort beim Beitreten
 
-  function peerOptions(server) {
-    const opts = { debug: 1 };
-    const m = /^([^:/]+)(?::(\d+))?$/.exec(server || '');
-    if (m) {
-      opts.host = m[1];
-      opts.port = m[2] ? Number(m[2]) : 443;
-      opts.secure = opts.port === 443;
-      opts.path = '/';
-    }
-    return opts;
-  }
-
-  let peer = null;
-  let conn = null;
+  let client = null;           // MQTT-Verbindung
+  let T = null;                // Topics des Raums
+  let brokerIdx = 0;
+  let helloTimer = null;
+  let helloTries = 0;
+  let joining = false;
   let code = (params.get('room') || '').toUpperCase();
   let welcomed = false;
-  let stopped = false;      // Raum voll / entfernt → nicht neu verbinden
-  let retryTimer = null;
-  let phase = 'lobby';
+  let stopped = false;      // Raum voll / entfernt / geschlossen → nicht neu verbinden
   let lastPong = 0;
+  let hostLost = false;
   let st = null;            // letzter Zustand vom Beamer
 
   // Runde 1: lokales Spiel
@@ -69,6 +62,7 @@
 
   // ---------- Verbindung ----------
   function join() {
+    if (joining) return;
     const name = $('#name').value.trim().slice(0, 16);
     if (!code) code = $('#code').value.trim().toUpperCase();
     if (!/^[A-Z0-9]{5}$/.test(code)) {
@@ -78,92 +72,121 @@
       return;
     }
     try { localStorage.setItem('tetrisName', name); } catch (e) { /* egal */ }
-    if (typeof Peer === 'undefined') { joinMsg('PeerJS konnte nicht geladen werden.', true); return; }
+    if (typeof mqtt === 'undefined') { joinMsg('Die Verbindungs-Bibliothek konnte nicht geladen werden.', true); return; }
     $('#btnJoin').disabled = true;
     joinMsg('Verbinde …');
     stopped = false;
+    joining = true;
+    brokerIdx = 0;
     requestWakeLock();
+    connectBroker();
+  }
 
-    if (peer && !peer.destroyed) { connect(); return; }
-    peer = new Peer(peerOptions(params.get('server')));
-    peer.on('open', connect);
-    peer.on('disconnected', () => {
-      if (!peer.destroyed) setTimeout(() => peer.reconnect(), 1500);
+  function brokerKey() {
+    return brokerFromUrl || TetrisNet.ORDER[brokerIdx % TetrisNet.ORDER.length];
+  }
+
+  function connectBroker() {
+    if (client) { try { client.end(true); } catch (e) { /* egal */ } }
+    T = TetrisNet.topics(code);
+    helloTries = 0;
+    const c = TetrisNet.connect(TetrisNet.brokerUrl(brokerKey()), {
+      will: { topic: T.host, payload: JSON.stringify({ type: 'bye', from: clientId }), qos: 0, retain: false },
     });
-    peer.on('error', err => {
-      console.warn('Peer-Fehler', err.type, err);
-      if (err.type === 'peer-unavailable') {
-        if (welcomed) { scheduleRetry(); return; }
-        backToJoin('Raum nicht gefunden. Ist die Beamer-Seite geöffnet und der Code richtig?');
-      } else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
-        if (welcomed) scheduleRetry();
-        else backToJoin('Keine Internetverbindung zum Server. Bitte WLAN/mobile Daten prüfen.');
-      } else if (err.type === 'browser-incompatible') {
-        backToJoin('Dieser Browser unterstützt kein WebRTC.');
+    client = c;
+    let connected = false;
+    // Server nicht erreichbar → Reserve-Server probieren bzw. Hinweis zeigen
+    const noServer = setTimeout(() => {
+      if (connected || client !== c || welcomed) return;
+      if (!brokerFromUrl && brokerIdx + 1 < TetrisNet.ORDER.length) { brokerIdx++; connectBroker(); return; }
+      joinMsg('Der Server ist gerade nicht erreichbar. Bitte WLAN bzw. mobile Daten prüfen – es wird weiter versucht …', true);
+    }, 9000);
+    c.on('connect', () => {
+      connected = true;
+      clearTimeout(noServer);
+      c.subscribe([T.client(clientId), T.all], { qos: 0 }, () => {
+        if (client !== c) return;
+        sendHello();
+        if (!welcomed) armHelloTimeout();
+      });
+    });
+    c.on('message', (topic, payload) => {
+      if (client !== c) return;
+      let msg = null;
+      try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
+      lastPong = Date.now();
+      handleMessage(msg);
+    });
+    c.on('offline', () => { if (welcomed && client === c) connectionLost(); });
+    c.on('error', e => console.warn('MQTT-Fehler', e));
+  }
+
+  function sendHello() {
+    if (stopped) return;
+    send({
+      type: 'hello', name: $('#name').value.trim().slice(0, 16),
+      score: game ? game.score : 0, lines: game ? game.lines : 0,
+    });
+  }
+
+  // Beim Beitreten: antwortet der Beamer nicht, erneut versuchen bzw. aufgeben
+  function armHelloTimeout() {
+    clearTimeout(helloTimer);
+    helloTimer = setTimeout(() => {
+      if (welcomed || stopped) return;
+      helloTries++;
+      if (!brokerFromUrl && helloTries === 1 && brokerIdx + 1 < TetrisNet.ORDER.length) {
+        brokerIdx++;   // Beamer nutzt evtl. den Reserve-Server
+        connectBroker();
+        return;
       }
-    });
+      if (helloTries >= 3) {
+        stopClient();
+        backToJoin('Raum nicht gefunden. Ist die Beamer-Seite geöffnet und der Code richtig?');
+        return;
+      }
+      joinMsg('Warte auf den Beamer …');
+      sendHello();
+      armHelloTimeout();
+    }, HELLO_WAIT);
+  }
+
+  function stopClient() {
+    clearTimeout(helloTimer);
+    if (client) { try { client.end(true); } catch (e) { /* egal */ } }
+    client = null;
   }
 
   function backToJoin(text) {
     $('#pad').hidden = true;
     $('#join').hidden = false;
     $('#btnJoin').disabled = false;
+    joining = false;
     if (!params.get('room')) { code = ''; $('#codeLabel').hidden = false; }
     joinMsg(text, true);
     welcomed = false;
   }
 
-  function connect() {
-    if (stopped) return;
-    if (conn) { try { conn.close(); } catch (e) { /* egal */ } }
-    const c = peer.connect(PREFIX + code, { reliable: true });
-    conn = c;
-    c.on('open', () => {
-      lastPong = Date.now();
-      c.send({
-        type: 'hello', name: $('#name').value.trim().slice(0, 16), clientId,
-        score: game ? game.score : 0, lines: game ? game.lines : 0,
-      });
-    });
-    c.on('data', msg => {
-      if (c !== conn) return;
-      lastPong = Date.now();
-      handleMessage(msg);
-    });
-    c.on('close', () => {
-      if (c !== conn) return;
-      setConnected(false);
-      if (!stopped) scheduleRetry();
-    });
-    c.on('error', e => console.warn('Verbindungsfehler', e));
-  }
-
-  function scheduleRetry() {
-    clearTimeout(retryTimer);
-    if (stopped) return;
-    setStatus('Verbindung verloren …<br><small>verbinde neu</small>');
-    retryTimer = setTimeout(() => {
-      if (!peer || peer.destroyed) return;
-      if (peer.disconnected) { peer.reconnect(); setTimeout(connect, 1000); }
-      else connect();
-    }, 2000);
+  function connectionLost() {
+    if (hostLost) return;
+    hostLost = true;
+    setConnected(false);
+    releaseAll(false);
+    setStatus('Verbindung verloren …<small>verbinde neu</small>');
   }
 
   // Lebenszeichen: Ping an den Beamer, und erkennen, wenn er nicht mehr antwortet
   setInterval(() => {
-    if (!welcomed || !conn || !conn.open) return;
+    if (!welcomed || stopped || !client) return;
     send({ type: 'ping', t: Date.now() });
-    if (Date.now() - lastPong > 6000) {
-      const dead = conn;
-      conn = null;
-      try { dead.close(); } catch (e) { /* egal */ }
-      setConnected(false);
-      scheduleRetry();
+    if (Date.now() - lastPong > HOST_TIMEOUT) {
+      connectionLost();
+      sendHello();
     }
-  }, 1000);
+  }, 2000);
 
   window.addEventListener('pagehide', () => {
-    try { if (conn) conn.close(); } catch (e) { /* egal */ }
+    if (welcomed) send({ type: 'bye' });
   });
 
   function setConnected(on) {
@@ -171,7 +194,9 @@
   }
 
   function send(msg) {
-    try { if (conn && conn.open) conn.send(msg); } catch (e) { /* egal */ }
+    try {
+      if (client && T) client.publish(T.host, JSON.stringify(Object.assign({}, msg, { from: clientId })), { qos: 0 });
+    } catch (e) { /* egal */ }
   }
 
   // ---------- Nachrichten vom Beamer ----------
@@ -180,19 +205,31 @@
     switch (msg.type) {
       case 'welcome':
         welcomed = true;
-        clearTimeout(retryTimer);
+        hostLost = false;
+        joining = false;
+        clearTimeout(helloTimer);
         $('#pname').textContent = msg.name;
         $('#join').hidden = true;
         $('#pad').hidden = false;
         setConnected(true);
         vibrate(30);
         break;
+      case 'rehello':
+        if (welcomed || joining) sendHello();
+        break;
+      case 'closed':
+        stopped = true;
+        stopClient();
+        backToJoin('Die Lehrkraft hat einen neuen Raum geöffnet – bitte den neuen QR-Code scannen.');
+        break;
       case 'full':
         stopped = true;
+        stopClient();
         backToJoin('Das Spiel ist schon voll (30 Spieler/innen).');
         break;
       case 'kicked':
         stopped = true;
+        stopClient();
         backToJoin('Du wurdest von der Lehrkraft entfernt.');
         break;
       case 'state':
@@ -542,7 +579,7 @@
     if (document.visibilityState === 'hidden') releaseAll(true);
     else {
       requestWakeLock();
-      if (welcomed && (!conn || !conn.open)) scheduleRetry();
+      if (welcomed && client) sendHello();
     }
   });
 

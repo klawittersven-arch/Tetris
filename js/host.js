@@ -1,5 +1,5 @@
 /*
- * Beamer-Ansicht: verwaltet die Verbindungen zu bis zu 30 Handys (PeerJS/WebRTC).
+ * Beamer-Ansicht: verwaltet die Verbindungen zu bis zu 30 Handys (über einen MQTT-Nachrichtenserver).
  * Runde 1: alle spielen auf dem Handy, der Beamer zeigt die Rangliste.
  * Runde 2: die zwei Schnellsten spielen das Finale-Duell am Beamer.
  */
@@ -8,7 +8,6 @@
 
   const { Game, COLS, VISIBLE } = window.Tetris;
   const { drawBoard, miniPiece } = window.TetrisRender;
-  const PREFIX = 'tetris-duell-';
   const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const MAX_PLAYERS = 30;
   const DAS = 160;   // ms bis zur Wiederholung beim Gedrückthalten
@@ -17,22 +16,14 @@
 
   const $ = (s, el = document) => el.querySelector(s);
 
-  // Optional eigener PeerJS-Server: index.html?server=host:port (wird an die Handys weitergegeben)
-  const serverParam = new URLSearchParams(location.search).get('server') || '';
-  function peerOptions(server) {
-    const opts = { debug: 1 };
-    const m = /^([^:/]+)(?::(\d+))?$/.exec(server || '');
-    if (m) {
-      opts.host = m[1];
-      opts.port = m[2] ? Number(m[2]) : 443;
-      opts.secure = opts.port === 443;
-      opts.path = '/';
-    }
-    return opts;
-  }
+  // Optional eigener MQTT-Server: index.html?broker=wss://server/mqtt (wird an die Handys weitergegeben)
+  const brokerParam = new URLSearchParams(location.search).get('broker') || '';
+  const PING_TIMEOUT = 9000; // ms ohne Lebenszeichen, bis ein Handy als getrennt gilt
 
   // ---------- Zustand ----------
-  let peer = null;
+  let client = null;          // MQTT-Verbindung
+  let brokerKey = '';
+  let T = null;               // Topics des Raums
   let roomCode = null;
   // lobby | r1-countdown | r1 | r1-done | countdown | playing | paused | over
   let phase = 'lobby';
@@ -81,38 +72,54 @@
     el.className = 'net ' + (cls || '');
   }
 
-  function startPeer(code, attempt) {
+  function startNet(code, attempt) {
     roomCode = code;
     try { sessionStorage.setItem('tetrisRoom', code); } catch (e) { /* egal */ }
+    brokerKey = brokerParam || TetrisNet.ORDER[attempt % TetrisNet.ORDER.length];
+    T = TetrisNet.topics(code);
+    if (client) { try { client.end(); } catch (e) { /* egal */ } }
     setNet('Verbinde mit dem Server …');
-    peer = new Peer(PREFIX + code, peerOptions(serverParam));
-
-    peer.on('open', () => {
+    const c = TetrisNet.connect(TetrisNet.brokerUrl(brokerKey));
+    client = c;
+    let connected = false;
+    // Klappt der erste Server nicht, den nächsten probieren
+    const fallback = brokerParam ? null : setTimeout(() => {
+      if (!connected && client === c) startNet(code, attempt + 1);
+    }, 8000);
+    c.on('connect', () => {
+      connected = true;
+      clearTimeout(fallback);
+      c.subscribe(T.host, { qos: 0 });
       setNet('Bereit – Handys können beitreten.', 'ok');
       renderJoinInfo();
+      // Nach Neuladen der Seite: alle Handys im Raum melden sich neu an
+      publish(T.all, { type: 'rehello' });
     });
-    peer.on('connection', handleConnection);
-    peer.on('disconnected', () => {
-      setNet('Verbindung zum Server unterbrochen – versuche erneut …', 'err');
-      setTimeout(() => { if (peer && !peer.destroyed && peer.disconnected) peer.reconnect(); }, 2000);
+    c.on('reconnect', () => { if (connected) setNet('Verbindung zum Server unterbrochen – verbinde neu …', 'err'); });
+    c.on('error', e => console.warn('MQTT-Fehler', e));
+    c.on('message', (topic, payload) => {
+      let msg = null;
+      try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
+      if (msg && typeof msg === 'object' && msg.from) handleMessage(String(msg.from).slice(0, 64), msg);
     });
-    peer.on('error', err => {
-      console.warn('Peer-Fehler', err.type, err);
-      if (err.type === 'unavailable-id') {
-        // Code ist (noch) belegt, z. B. nach Neuladen der Seite
-        peer.destroy();
-        if (attempt < 3) setTimeout(() => startPeer(code, attempt + 1), 2500);
-        else startPeer(newCode(), 0);
-      } else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
-        setNet('Keine Verbindung zum Server. Ist der Laptop online? Neuer Versuch …', 'err');
-        setTimeout(() => {
-          if (!peer || peer.destroyed) startPeer(code, attempt);
-          else if (peer.disconnected) peer.reconnect();
-        }, 3000);
-      } else if (err.type === 'browser-incompatible') {
-        setNet('Dieser Browser unterstützt kein WebRTC. Bitte Chrome, Edge oder Firefox verwenden.', 'err');
-      }
-    });
+  }
+
+  function publish(topic, msg) {
+    try { if (client) client.publish(topic, JSON.stringify(msg), { qos: 0 }); } catch (e) { /* egal */ }
+  }
+
+  // „Verbindung“ zu einem Handy: schickt Nachrichten an dessen eigenes Topic
+  function makeConn(id) {
+    return { id, open: true, send(msg) { publish(T.client(id), msg); }, close() { this.open = false; } };
+  }
+
+  function newRoom() {
+    if (phase !== 'lobby') return;
+    publish(T.all, { type: 'closed' });
+    players.clear();
+    updateLobby();
+    // kurz warten, damit die Nachricht an die Handys noch rausgeht
+    setTimeout(() => startNet(newCode(), 0), 500);
   }
 
   function joinUrl() {
@@ -120,7 +127,7 @@
     u.search = '';
     u.hash = '';
     u.searchParams.set('room', roomCode);
-    if (serverParam) u.searchParams.set('server', serverParam);
+    u.searchParams.set('b', brokerKey);
     return u.toString();
   }
 
@@ -146,68 +153,63 @@
     return name;
   }
 
-  function handleConnection(conn) {
-    let me = null;
+  function handleMessage(id, msg) {
+    let me = players.get(id);
+    if (me && me.connected) me.lastSeen = Date.now();
 
-    conn.on('data', msg => {
-      if (!msg || typeof msg !== 'object') return;
-      if (me && me.conn === conn) me.lastSeen = Date.now();
-
-      if (msg.type === 'hello') {
-        const id = String(msg.clientId || Math.random());
-        let p = players.get(id);
-        if (!p) {
-          if (players.size >= MAX_PLAYERS) {
-            safeSend(conn, { type: 'full' });
-            setTimeout(() => conn.close(), 500);
-            return;
-          }
-          p = { id, conn: null, name: '', connected: false, score: 0, lines: 0, qualifiedAt: 0, lastSeen: 0, bumped: 0 };
-          players.set(id, p);
-        } else if (p.conn && p.conn !== conn) {
-          try { p.conn.close(); } catch (e) { /* egal */ }
-        }
-        me = p;
-        p.conn = conn;
-        p.connected = true;
-        p.lastSeen = Date.now();
-        p.name = uniqueName(msg.name, id);
-        // Das Handy meldet seinen aktuellen Punktestand (0 nach Neuladen der Seite)
-        if (!p.qualifiedAt) {
-          p.score = phase === 'lobby' ? 0 : Math.max(0, Number(msg.score) || 0);
-          p.lines = phase === 'lobby' ? 0 : Math.max(0, Number(msg.lines) || 0);
-        }
-        safeSend(conn, { type: 'welcome', name: p.name });
-        sendState(p);
-        boardDirty = true;
-        updateLobby();
-        updateDots();
-        if (phase === 'paused' && pauseReason === 'disconnect' && finalistsConnected()) resume();
-      } else if (!me || me.conn !== conn) {
-        return;
-      } else if (msg.type === 'input') {
-        const i = finalists.indexOf(me.id);
-        if (i >= 0 && isDuel()) handleInput(i, msg.a, !!msg.d);
-      } else if (msg.type === 'score') {
-        if (phase !== 'r1' || me.qualifiedAt) return;
-        const score = Math.max(0, Number(msg.score) || 0);
-        if (score > me.score) me.bumped = performance.now();
-        me.score = score;
-        me.lines = Math.max(0, Number(msg.lines) || 0);
-        boardDirty = true;
-        if (me.score >= target) qualify(me);
-      } else if (msg.type === 'reset') {
-        if (phase !== 'r1' || me.qualifiedAt) return;
-        me.score = 0;
-        me.lines = 0;
-        boardDirty = true;
-      } else if (msg.type === 'ping') {
-        safeSend(conn, { type: 'pong', t: msg.t });
+    if (msg.type === 'hello') {
+      const conn = makeConn(id);
+      let p = me;
+      if (!p) {
+        if (players.size >= MAX_PLAYERS) { safeSend(conn, { type: 'full' }); return; }
+        p = { id, conn: null, name: '', connected: false, score: 0, lines: 0, qualifiedAt: 0, lastSeen: 0, bumped: 0 };
+        players.set(id, p);
+      } else if (p.conn) {
+        p.conn.close();
       }
-    });
-
-    conn.on('close', () => { if (me) dropPlayer(me, conn); });
-    conn.on('error', e => console.warn('Verbindungsfehler', e));
+      p.conn = conn;
+      p.connected = true;
+      p.lastSeen = Date.now();
+      p.name = uniqueName(msg.name, id);
+      // Das Handy meldet seinen aktuellen Punktestand (0 nach Neuladen der Seite)
+      if (!p.qualifiedAt) {
+        p.score = phase === 'lobby' ? 0 : Math.max(0, Number(msg.score) || 0);
+        p.lines = phase === 'lobby' ? 0 : Math.max(0, Number(msg.lines) || 0);
+      }
+      safeSend(conn, { type: 'welcome', name: p.name });
+      sendState(p);
+      boardDirty = true;
+      updateLobby();
+      updateDots();
+      if (phase === 'paused' && pauseReason === 'disconnect' && finalistsConnected()) resume();
+      return;
+    }
+    if (!me || !me.connected) {
+      // Unbekanntes Handy (z. B. nach Neuladen der Beamer-Seite): neu anmelden lassen
+      if (msg.type !== 'bye') publish(T.client(id), { type: 'rehello' });
+      return;
+    }
+    if (msg.type === 'input') {
+      const i = finalists.indexOf(me.id);
+      if (i >= 0 && isDuel()) handleInput(i, msg.a, !!msg.d);
+    } else if (msg.type === 'score') {
+      if (phase !== 'r1' || me.qualifiedAt) return;
+      const score = Math.max(0, Number(msg.score) || 0);
+      if (score > me.score) me.bumped = performance.now();
+      me.score = score;
+      me.lines = Math.max(0, Number(msg.lines) || 0);
+      boardDirty = true;
+      if (me.score >= target) qualify(me);
+    } else if (msg.type === 'reset') {
+      if (phase !== 'r1' || me.qualifiedAt) return;
+      me.score = 0;
+      me.lines = 0;
+      boardDirty = true;
+    } else if (msg.type === 'ping') {
+      safeSend(me.conn, { type: 'pong', t: msg.t });
+    } else if (msg.type === 'bye') {
+      dropPlayer(me, me.conn);
+    }
   }
 
   // Verbindung eines Spielers als getrennt markieren
@@ -225,13 +227,13 @@
     boardDirty = true;
     updateLobby();
     updateDots();
-    try { conn.close(); } catch (e) { /* egal */ }
+    if (conn) conn.close();
   }
 
-  // Handys senden jede Sekunde ein Ping – bleibt es aus, gilt das Handy als getrennt
+  // Handys senden alle 2 Sekunden ein Ping – bleibt es aus, gilt das Handy als getrennt
   setInterval(() => {
     for (const p of players.values()) {
-      if (p.connected && Date.now() - p.lastSeen > 5000) dropPlayer(p, p.conn);
+      if (p.connected && Date.now() - p.lastSeen > PING_TIMEOUT) dropPlayer(p, p.conn);
     }
   }, 1000);
 
@@ -309,7 +311,7 @@
     boardDirty = false;
     const list = [...players.values()].sort((a, b) => {
       if (a.qualifiedAt || b.qualifiedAt) return (a.qualifiedAt || 99) - (b.qualifiedAt || 99);
-      return b.score - a.score || a.name.localeCompare(b.name);
+      return b.score - a.score || a.name.localeCompare(b.name, 'de', { numeric: true });
     });
     const n = Math.max(list.length, 1);
     const cols = n <= 10 ? 1 : n <= 20 ? 2 : 3;
@@ -759,12 +761,12 @@
 
   function kick(p) {
     if (phase !== 'lobby') return;
-    const c = p.conn;
-    safeSend(c, { type: 'kicked' });
+    safeSend(p.conn, { type: 'kicked' });
+    if (p.conn) p.conn.close();
     players.delete(p.id);
-    setTimeout(() => { try { c && c.close(); } catch (e) { /* egal */ } }, 300);
     updateLobby();
   }
+
 
   let wakeLock = null;
   async function requestWakeLock() {
@@ -784,6 +786,7 @@
     fn();
   }));
   onClick('#btnStart', startR1);
+  onClick('#btnNewRoom', () => { if (confirm('Neuen Raum mit neuem Code öffnen? Alle Handys müssen dann neu scannen.')) newRoom(); });
   onClick('#btnFinal', startFinal);
   onClick('#btnBackQ', toLobby);
   onClick('#btnNext', () => { if (phase === 'over') startDuelRound(); });
@@ -801,6 +804,6 @@
   requestAnimationFrame(loop);
   let saved = null;
   try { saved = sessionStorage.getItem('tetrisRoom'); } catch (e) { /* egal */ }
-  if (typeof Peer === 'undefined') setNet('PeerJS konnte nicht geladen werden.', 'err');
-  else startPeer(saved || newCode(), 0);
+  if (typeof mqtt === 'undefined') setNet('Die Verbindungs-Bibliothek konnte nicht geladen werden.', 'err');
+  else startNet(saved || newCode(), 0);
 })();

@@ -180,3 +180,4 @@ main[hidden] { display: none !important; }
 .vs { font-size: clamp(24px, 6vh, 80px); color: var(--muted); font-weight: 800; }
 .btnrow { display: flex; gap: 2vw; }
 button.big.alt { background: var(--panel); border: 2px solid var(--line); }
+#btnNewRoom { font-size: clamp(11px, 1.5vh, 16px); opacity: .7; }

@@ -44,12 +44,13 @@ Spieler 1: A / D bewegen, W drehen, S fallen lassen · Spieler 2: ← / → bewe
 
 ## Technik & Fehlerbehebung
 
-- Reines HTML/JavaScript ohne eigenen Server. Die Handys verbinden sich per **WebRTC** direkt mit dem Laptop; der kostenlose öffentliche PeerJS-Server (`0.peerjs.com`) vermittelt nur den Verbindungsaufbau. Laptop und Handys brauchen dafür Internet.
-- **Am zuverlässigsten**: Laptop und Handys im selben WLAN.
-- **„Raum nicht gefunden“**: Ist die Beamer-Seite offen und zeigt „Bereit – Handys können beitreten“?
-- **Handys verbinden sich nicht, obwohl der Raum gefunden wird**: Manche Schulnetze blockieren WebRTC zwischen Geräten. Dann hilft oft, wenn die Handys mobile Daten nutzen (oder der Laptop über einen Handy-Hotspot ins Netz geht).
+- Reines HTML/JavaScript ohne eigenen Server. Beamer und Handys schicken sich ihre Nachrichten über einen kostenlosen öffentlichen **MQTT-Nachrichtenserver** (`broker.hivemq.com`, als Reserve `broker.emqx.io`) – ähnlich wie ein Chat. Es gibt keine direkte Verbindung zwischen den Geräten, deshalb funktioniert es auch in Schulnetzen, die das blockieren, und mit mobilen Daten. Laptop und Handys brauchen Internet.
+- Übertragen werden nur Vornamen, Punktestände und Tastendrücke, unter einem zufälligen Raumcode.
+- **„Raum nicht gefunden“**: Ist die Beamer-Seite offen und zeigt „Bereit – Handys können beitreten“? Code richtig?
+- **„Der Server ist gerade nicht erreichbar“**: Das Handy hat kein Internet, oder das Netz sperrt den Server. Mobile Daten probieren.
+- **Neuer Raum**: Der Raumcode bleibt beim Neuladen der Beamer-Seite gleich – die Handys melden sich dann automatisch wieder an. Mit dem Button „Neuer Raum“ in der Lobby gibt es einen neuen Code; alle Handys müssen dann neu scannen.
 - Die Seite nicht als lokale Datei (`file://…`) öffnen, sonst funktioniert der QR-Code nicht.
-- Eigener PeerJS-Server (optional): `index.html?server=mein-server.de:443` – wird automatisch an die Handys weitergegeben.
+- Eigener MQTT-Server (optional): `index.html?broker=wss://mein-server.de/mqtt` – wird automatisch an die Handys weitergegeben.
 
 ### Dateien
 
@@ -58,8 +59,9 @@ index.html          Beamer: Lobby, Rangliste (Runde 1), Finale (Runde 2)
 controller.html     Handy: eigenes Spiel (Runde 1) bzw. Steuerung (Finale)
 js/tetris.js        Spiellogik (SRS-Drehung, 7-Bag, Müllzeilen)
 js/render.js        Zeichnen von Spielfeld und Steinen (Beamer + Handy)
+js/net.js           Verbindung über den MQTT-Nachrichtenserver
 js/host.js          Verbindungen, Ablauf beider Runden, Darstellung am Beamer
 js/controller.js    Handy: Verbindung, lokales Spiel, Knöpfe
 css/                Gestaltung
-vendor/             PeerJS 1.5.4 und qrcodejs 1.0.0 (MIT-Lizenz)
+vendor/             MQTT.js 5 und qrcodejs 1.0.0 (MIT-Lizenz)
 ```
