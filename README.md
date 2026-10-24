@@ -1,4 +1,4 @@
-# Tetris-Klassenturnier für den Unterricht
+# KBS Tetris-Klassenturnier
 
 Die ganze Klasse spielt Tetris mit den eigenen Smartphones, der Laptop der Lehrkraft zeigt alles am Beamer. Es muss nichts installiert werden: Alle scannen einen QR-Code.
 
@@ -65,5 +65,6 @@ wrangler.jsonc      Cloudflare-Konfiguration
 js/host.js          Verbindungen, Ablauf beider Runden, Darstellung am Beamer
 js/controller.js    Handy: Verbindung, lokales Spiel, Knöpfe
 css/                Gestaltung
+img/kbs-logo.png    Schullogo
 vendor/             qrcodejs 1.0.0 (MIT-Lizenz)
 ```

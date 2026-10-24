@@ -181,3 +181,26 @@ main[hidden] { display: none !important; }
 .btnrow { display: flex; gap: 2vw; }
 button.big.alt { background: var(--panel); border: 2px solid var(--line); }
 #btnNewRoom { font-size: clamp(11px, 1.5vh, 16px); opacity: .7; }
+
+/* ---------- Schullogo (KBS) ---------- */
+.badge {
+  display: block; flex: none;
+  width: 14vh; height: 14vh; object-fit: contain;
+  padding: 1.4vh; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #f3efe9 100%);
+  box-shadow: 0 0 0 .5vh rgba(201, 124, 69, .9), 0 0 0 1vh rgba(255, 255, 255, .06), 0 1vh 4vh rgba(0, 0, 0, .55);
+  animation: pop .6s;
+}
+.badge.md { width: 11vh; height: 11vh; }
+.badge.sm { width: 8vh; height: 8vh; padding: .9vh; box-shadow: 0 0 0 .35vh rgba(201, 124, 69, .9), 0 .6vh 2vh rgba(0, 0, 0, .5); }
+.badge.xs {
+  display: inline-block; vertical-align: middle; width: 4.6vh; height: 4.6vh; padding: .5vh; margin-right: .8vw;
+  box-shadow: 0 0 0 .25vh rgba(201, 124, 69, .9);
+}
+.brand { display: flex; align-items: center; gap: 2.4vw; }
+.brandtext { display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
+.brand .kbs {
+  color: #d9894f; font-weight: 900; letter-spacing: .5em;
+  font-size: clamp(18px, 3.6vh, 46px); line-height: 1; margin-bottom: .4vh;
+}
+.brand .title { font-size: clamp(30px, 7.4vh, 100px); line-height: 1.05; white-space: nowrap; }

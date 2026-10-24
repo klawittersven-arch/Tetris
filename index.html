@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tetris-Klassenturnier – Beamer</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 3 2%27%3E%3Cpath fill=%27%23a855f7%27 d=%27M0 1h3v1H0zM1 0h1v1H1z%27/%3E%3C/svg%3E">
+  <title>KBS Tetris-Klassenturnier – Beamer</title>
+  <link rel="icon" type="image/png" href="img/kbs-logo.png">
   <link rel="stylesheet" href="css/host.css">
 </head>
 <body>
@@ -16,6 +16,7 @@
     </section>
 
     <aside id="center">
+      <img class="badge sm" src="img/kbs-logo.png" alt="Schullogo">
       <h1>FINALE</h1>
       <div id="rounds"><span id="r0">0</span><small>:</small><span id="r1">0</span></div>
       <div class="roundlabel">Runden</div>
@@ -36,7 +37,7 @@
   <main id="quali" hidden>
     <header class="qhead">
       <div>
-        <div class="qround">RUNDE 1</div>
+        <div class="qround"><img class="badge xs" src="img/kbs-logo.png" alt="">KBS · RUNDE 1</div>
         <h1 class="qtitle">Wer schafft zuerst <b class="target">100</b> Punkte?</h1>
       </div>
       <div class="qjoin">
@@ -55,7 +56,13 @@
 
   <!-- Lobby -->
   <div id="lobby" class="overlay">
-    <h1 class="title">TETRIS <span>KLASSENTURNIER</span></h1>
+    <header class="brand">
+      <img class="badge" src="img/kbs-logo.png" alt="Logo der KBS">
+      <div class="brandtext">
+        <div class="kbs">KBS</div>
+        <h1 class="title">TETRIS <span>KLASSENTURNIER</span></h1>
+      </div>
+    </header>
     <div class="lobbygrid">
       <div class="joinbox">
         <p class="sub">Alle scannen diesen QR-Code:</p>
@@ -88,6 +95,7 @@
 
   <!-- Runde 1 vorbei: Finalisten -->
   <div id="finalists" class="overlay" hidden>
+    <img class="badge md" src="img/kbs-logo.png" alt="Schullogo">
     <div class="qround">RUNDE 1 GESCHAFFT!</div>
     <h1 class="title">FINALE</h1>
     <div class="versus">

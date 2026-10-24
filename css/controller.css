@@ -93,3 +93,11 @@ input:focus { outline: none; border-color: var(--accent); }
 #stage { touch-action: none; border-radius: 14px; }
 #stage.tap { animation: tap .25s; }
 @keyframes tap { 0% { background: rgba(255,255,255,.12); } 100% { background: transparent; } }
+
+/* Schullogo (KBS) */
+#join .badge {
+  display: block; margin: 0 auto -4px; width: 104px; height: 104px; object-fit: contain;
+  padding: 12px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, #f3efe9);
+  box-shadow: 0 0 0 4px rgba(201, 124, 69, .9), 0 8px 24px rgba(0, 0, 0, .5);
+}
+#join h1 small { display: block; font-size: 18px; letter-spacing: .5em; color: #d9894f; -webkit-text-fill-color: #d9894f; margin-bottom: 2px; }
