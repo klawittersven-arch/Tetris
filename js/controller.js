@@ -1,5 +1,5 @@
 /*
- * Handy: verbindet sich über einen MQTT-Nachrichtenserver mit dem Beamer.
+ * Handy: verbindet sich über den eigenen Cloudflare-Dienst mit dem Beamer.
  * Runde 1: eigenes Tetris läuft auf dem Handy, nur der Punktestand geht an den Beamer.
  * Runde 2: die beiden Finalisten senden nur Tastendrücke, das Duell läuft am Beamer.
  */
@@ -8,13 +8,12 @@
 
   const $ = s => document.querySelector(s);
   const params = new URLSearchParams(location.search);
-  const brokerFromUrl = params.get('b') || params.get('broker') || '';
+  const transport = params.get('transport') || '';   // nur für Tests: 'poll'
   const HOST_TIMEOUT = 9000;   // ms ohne Antwort vom Beamer = Verbindung verloren
   const HELLO_WAIT = 4000;     // ms warten auf die Antwort beim Beitreten
 
-  let client = null;           // MQTT-Verbindung
-  let T = null;                // Topics des Raums
-  let brokerIdx = 0;
+  const SCORE_EVERY = 1500;     // ms: Punktestand höchstens so oft an den Beamer
+  let net = null;              // Verbindung zum Cloudflare-Dienst
   let helloTimer = null;
   let helloTries = 0;
   let joining = false;
@@ -72,53 +71,42 @@
       return;
     }
     try { localStorage.setItem('tetrisName', name); } catch (e) { /* egal */ }
-    if (typeof mqtt === 'undefined') { joinMsg('Die Verbindungs-Bibliothek konnte nicht geladen werden.', true); return; }
     $('#btnJoin').disabled = true;
     joinMsg('Verbinde …');
     stopped = false;
     joining = true;
-    brokerIdx = 0;
-    requestWakeLock();
-    connectBroker();
-  }
-
-  function brokerKey() {
-    return brokerFromUrl || TetrisNet.ORDER[brokerIdx % TetrisNet.ORDER.length];
-  }
-
-  function connectBroker() {
-    if (client) { try { client.end(true); } catch (e) { /* egal */ } }
-    T = TetrisNet.topics(code);
     helloTries = 0;
-    const c = TetrisNet.connect(TetrisNet.brokerUrl(brokerKey()), {
-      will: { topic: T.host, payload: JSON.stringify({ type: 'bye', from: clientId }), qos: 0, retain: false },
-    });
-    client = c;
-    let connected = false;
-    // Server nicht erreichbar → Reserve-Server probieren bzw. Hinweis zeigen
-    const noServer = setTimeout(() => {
-      if (connected || client !== c || welcomed) return;
-      if (!brokerFromUrl && brokerIdx + 1 < TetrisNet.ORDER.length) { brokerIdx++; connectBroker(); return; }
-      joinMsg('Der Server ist gerade nicht erreichbar. Bitte WLAN bzw. mobile Daten prüfen – es wird weiter versucht …', true);
-    }, 9000);
-    c.on('connect', () => {
-      connected = true;
-      clearTimeout(noServer);
-      c.subscribe([T.client(clientId), T.all], { qos: 0 }, () => {
-        if (client !== c) return;
+    requestWakeLock();
+    connect();
+  }
+
+  function connect() {
+    if (net) net.close();
+    let opened = false;
+    const n = TetrisNet.player(code, clientId, {
+      onOpen() {
+        opened = true;
+        if (net !== n) return;
         sendHello();
         if (!welcomed) armHelloTimeout();
-      });
-    });
-    c.on('message', (topic, payload) => {
-      if (client !== c) return;
-      let msg = null;
-      try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
-      lastPong = Date.now();
-      handleMessage(msg);
-    });
-    c.on('offline', () => { if (welcomed && client === c) connectionLost(); });
-    c.on('error', e => console.warn('MQTT-Fehler', e));
+      },
+      onStatus(state) {
+        if (net !== n) return;
+        if (state === 'lost' && welcomed) connectionLost();
+      },
+      onMessage(msg) {
+        if (net !== n) return;
+        lastPong = Date.now();
+        handleMessage(msg);
+      },
+    }, { transport });
+    net = n;
+    // Server gar nicht erreichbar → Hinweis (es wird im Hintergrund weiter versucht)
+    setTimeout(() => {
+      if (!opened && net === n && !welcomed && !stopped) {
+        joinMsg('Der Server ist gerade nicht erreichbar. Bitte WLAN bzw. mobile Daten prüfen – es wird weiter versucht …', true);
+      }
+    }, 9000);
   }
 
   function sendHello() {
@@ -135,11 +123,6 @@
     helloTimer = setTimeout(() => {
       if (welcomed || stopped) return;
       helloTries++;
-      if (!brokerFromUrl && helloTries === 1 && brokerIdx + 1 < TetrisNet.ORDER.length) {
-        brokerIdx++;   // Beamer nutzt evtl. den Reserve-Server
-        connectBroker();
-        return;
-      }
       if (helloTries >= 3) {
         stopClient();
         backToJoin('Raum nicht gefunden. Ist die Beamer-Seite geöffnet und der Code richtig?');
@@ -153,8 +136,8 @@
 
   function stopClient() {
     clearTimeout(helloTimer);
-    if (client) { try { client.end(true); } catch (e) { /* egal */ } }
-    client = null;
+    if (net) net.close();
+    net = null;
   }
 
   function backToJoin(text) {
@@ -177,13 +160,23 @@
 
   // Lebenszeichen: Ping an den Beamer, und erkennen, wenn er nicht mehr antwortet
   setInterval(() => {
-    if (!welcomed || stopped || !client) return;
+    if (!welcomed || stopped || !net) return;
     send({ type: 'ping', t: Date.now() });
     if (Date.now() - lastPong > HOST_TIMEOUT) {
       connectionLost();
       sendHello();
     }
-  }, 2000);
+  }, 3000);
+
+  // Punktestand gedrosselt melden: höchstens alle 1,5 s, und nur wenn er sich geändert hat
+  let sentScore = -1;
+  function sendScore(force) {
+    if (!game || !welcomed) return;
+    if (!force && game.score === sentScore) return;
+    sentScore = game.score;
+    send({ type: 'score', score: game.score, lines: game.lines });
+  }
+  setInterval(() => { if (running) sendScore(false); }, SCORE_EVERY);
 
   window.addEventListener('pagehide', () => {
     if (welcomed) send({ type: 'bye' });
@@ -194,9 +187,7 @@
   }
 
   function send(msg) {
-    try {
-      if (client && T) client.publish(T.host, JSON.stringify(Object.assign({}, msg, { from: clientId })), { qos: 0 });
-    } catch (e) { /* egal */ }
+    if (net) net.send(msg);
   }
 
   // ---------- Nachrichten vom Beamer ----------
@@ -213,6 +204,13 @@
         $('#pad').hidden = false;
         setConnected(true);
         vibrate(30);
+        break;
+      case 'nohost':
+        if (!welcomed) {
+          stopped = true;
+          stopClient();
+          backToJoin('Raum nicht gefunden. Ist die Beamer-Seite geöffnet und der Code richtig?');
+        }
         break;
       case 'rehello':
         if (welcomed || joining) sendHello();
@@ -284,10 +282,13 @@
     if ((s.phase === 'r1-countdown' || s.phase === 'r1') && !s.qualified && gameSeed !== s.seed) {
       gameSeed = s.seed;
       game = new Game(s.seed);
+      sentScore = 0;
       releaseAll(false);
     }
     if (s.phase === 'lobby') { game = null; gameSeed = null; }
     running = s.phase === 'r1' && !s.qualified;
+    // Im Finale schneller abfragen, falls das Handy ohne Dauerverbindung läuft
+    if (net) net.setFast(s.slot >= 0 && (s.phase === 'countdown' || s.phase === 'playing'));
     if (!running) releaseAll(true);
     pad.classList.toggle('inactive', !(running || (finalist && s.phase === 'playing')));
 
@@ -442,7 +443,8 @@
       game.update(dt);
       for (const ev of game.takeEvents()) {
         if (ev.type === 'lock') {
-          send({ type: 'score', score: game.score, lines: game.lines });
+          // Ziel erreicht → sofort melden (es zählt, wer zuerst da ist)
+          if (st && game.score >= st.target) sendScore(false);
           updateInfo();
         } else if (ev.type === 'clear') {
           vibrate(ev.lines >= 4 ? [60, 40, 60, 40, 120] : [40]);
@@ -454,6 +456,7 @@
           hitFlash();
           flash = { text: 'Neustart: 0 Punkte', color: '#ff4d5e', t: -600 };
           game = new Game((Math.random() * 2 ** 32) >>> 0);
+          sentScore = 0;
           send({ type: 'reset' });
           updateInfo();
         }
@@ -579,7 +582,7 @@
     if (document.visibilityState === 'hidden') releaseAll(true);
     else {
       requestWakeLock();
-      if (welcomed && client) sendHello();
+      if (welcomed && net) sendHello();
     }
   });
 

@@ -8,15 +8,13 @@ Die ganze Klasse spielt Tetris mit den eigenen Smartphones, der Laptop der Lehrk
 
 Punkte (Standard-Tetris): 1 Reihe = 100, 2 Reihen = 300, 3 Reihen = 500, 4 Reihen = 800 – jeweils mal Level. Das Level steigt alle 10 Reihen bzw. alle 45 Sekunden (die Steine fallen dann schneller).
 
-## Einmalig einrichten (GitHub Pages)
+## Adresse & Einrichtung (Cloudflare)
 
-Die Handys brauchen eine Internetadresse, unter der das Spiel erreichbar ist:
+**Link für den Laptop am Beamer: https://tetris.klawittersven.workers.dev**
 
-1. Im Repository auf **Settings → Pages** gehen.
-2. Bei **Source** „Deploy from a branch“ wählen, den Branch und den Ordner `/ (root)` auswählen, **Save**.
-3. Nach ca. einer Minute ist das Spiel erreichbar unter `https://klawittersven-arch.github.io/Tetris/`
+Das Spiel und der Verbindungsdienst laufen auf Cloudflare (Workers + Durable Objects, kostenloser Tarif). Das Cloudflare-Projekt „tetris“ ist mit diesem GitHub-Repository verknüpft: Jede Änderung, die hochgeladen wird, geht nach ca. einer Minute automatisch online. Ob ein Update durchgelaufen ist, sieht man im Cloudflare-Dashboard unter **Workers & Pages → tetris → Deployments**.
 
-GitHub Pages ist für öffentliche Repositories kostenlos (bei privaten braucht man ein kostenpflichtiges Konto oder einen anderen Webspace – es sind nur statische Dateien).
+Alte Links auf `klawittersven-arch.github.io/Tetris` leiten automatisch auf die Cloudflare-Adresse um.
 
 ## Ablauf im Unterricht
 
@@ -44,13 +42,14 @@ Spieler 1: A / D bewegen, W drehen, S fallen lassen · Spieler 2: ← / → bewe
 
 ## Technik & Fehlerbehebung
 
-- Reines HTML/JavaScript ohne eigenen Server. Beamer und Handys schicken sich ihre Nachrichten über einen kostenlosen öffentlichen **MQTT-Nachrichtenserver** (`broker.hivemq.com`, als Reserve `broker.emqx.io`) – ähnlich wie ein Chat. Es gibt keine direkte Verbindung zwischen den Geräten, deshalb funktioniert es auch in Schulnetzen, die das blockieren, und mit mobilen Daten. Laptop und Handys brauchen Internet.
-- Übertragen werden nur Vornamen, Punktestände und Tastendrücke, unter einem zufälligen Raumcode.
+- Beamer und Handys sprechen nicht direkt miteinander. Alle Nachrichten laufen über den eigenen Cloudflare-Dienst unter derselben Adresse wie das Spiel – über normales HTTPS (Port 443), das Schulfilter praktisch immer durchlassen. Pro Raum verwaltet ein „Durable Object“ die Verbindungen.
+- Die Handys nutzen eine Dauerverbindung (WebSocket). Klappt die nicht, fragen sie automatisch alle 1,5 Sekunden per normaler HTTPS-Anfrage nach (im Finale alle 0,25 s) – das funktioniert auch hinter strengen Filtern.
+- In Runde 1 schickt jedes Handy seinen Punktestand höchstens alle 1,5 Sekunden; wer das Ziel erreicht, meldet das sofort.
+- Übertragen werden nur Vornamen, Punktestände und Tastendrücke, unter einem zufälligen Raumcode. Nichts wird dauerhaft gespeichert.
 - **„Raum nicht gefunden“**: Ist die Beamer-Seite offen und zeigt „Bereit – Handys können beitreten“? Code richtig?
-- **„Der Server ist gerade nicht erreichbar“**: Das Handy hat kein Internet, oder das Netz sperrt den Server. Mobile Daten probieren.
+- **„Der Server ist gerade nicht erreichbar“**: Das Handy hat kein Internet. WLAN prüfen oder mobile Daten probieren.
 - **Neuer Raum**: Der Raumcode bleibt beim Neuladen der Beamer-Seite gleich – die Handys melden sich dann automatisch wieder an. Mit dem Button „Neuer Raum“ in der Lobby gibt es einen neuen Code; alle Handys müssen dann neu scannen.
-- Die Seite nicht als lokale Datei (`file://…`) öffnen, sonst funktioniert der QR-Code nicht.
-- Eigener MQTT-Server (optional): `index.html?broker=wss://mein-server.de/mqtt` – wird automatisch an die Handys weitergegeben.
+- Die Beamer-Seite nur in **einem** Fenster öffnen; ein zweites Fenster mit demselben Raum übernimmt ihn.
 
 ### Dateien
 
@@ -59,9 +58,12 @@ index.html          Beamer: Lobby, Rangliste (Runde 1), Finale (Runde 2)
 controller.html     Handy: eigenes Spiel (Runde 1) bzw. Steuerung (Finale)
 js/tetris.js        Spiellogik (SRS-Drehung, 7-Bag, Müllzeilen)
 js/render.js        Zeichnen von Spielfeld und Steinen (Beamer + Handy)
-js/net.js           Verbindung über den MQTT-Nachrichtenserver
+js/net.js           Verbindung zum Cloudflare-Dienst (WebSocket bzw. HTTP-Abfragen)
+worker/index.js     Cloudflare Worker + Durable Object (Nachrichten-Vermittlung pro Raum)
+wrangler.jsonc      Cloudflare-Konfiguration
+.assetsignore       Dateien, die nicht öffentlich ausgeliefert werden
 js/host.js          Verbindungen, Ablauf beider Runden, Darstellung am Beamer
 js/controller.js    Handy: Verbindung, lokales Spiel, Knöpfe
 css/                Gestaltung
-vendor/             MQTT.js 5 und qrcodejs 1.0.0 (MIT-Lizenz)
+vendor/             qrcodejs 1.0.0 (MIT-Lizenz)
 ```

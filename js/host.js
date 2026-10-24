@@ -1,5 +1,5 @@
 /*
- * Beamer-Ansicht: verwaltet die Verbindungen zu bis zu 30 Handys (über einen MQTT-Nachrichtenserver).
+ * Beamer-Ansicht: verwaltet die Verbindungen zu bis zu 30 Handys (über den eigenen Cloudflare-Dienst).
  * Runde 1: alle spielen auf dem Handy, der Beamer zeigt die Rangliste.
  * Runde 2: die zwei Schnellsten spielen das Finale-Duell am Beamer.
  */
@@ -16,14 +16,10 @@
 
   const $ = (s, el = document) => el.querySelector(s);
 
-  // Optional eigener MQTT-Server: index.html?broker=wss://server/mqtt (wird an die Handys weitergegeben)
-  const brokerParam = new URLSearchParams(location.search).get('broker') || '';
   const PING_TIMEOUT = 9000; // ms ohne Lebenszeichen, bis ein Handy als getrennt gilt
 
   // ---------- Zustand ----------
-  let client = null;          // MQTT-Verbindung
-  let brokerKey = '';
-  let T = null;               // Topics des Raums
+  let net = null;             // Verbindung zum Cloudflare-Dienst
   let roomCode = null;
   // lobby | r1-countdown | r1 | r1-done | countdown | playing | paused | over
   let phase = 'lobby';
@@ -72,54 +68,42 @@
     el.className = 'net ' + (cls || '');
   }
 
-  function startNet(code, attempt) {
+  function startNet(code) {
     roomCode = code;
     try { sessionStorage.setItem('tetrisRoom', code); } catch (e) { /* egal */ }
-    brokerKey = brokerParam || TetrisNet.ORDER[attempt % TetrisNet.ORDER.length];
-    T = TetrisNet.topics(code);
-    if (client) { try { client.end(); } catch (e) { /* egal */ } }
+    if (net) net.close();
     setNet('Verbinde mit dem Server …');
-    const c = TetrisNet.connect(TetrisNet.brokerUrl(brokerKey));
-    client = c;
-    let connected = false;
-    // Klappt der erste Server nicht, den nächsten probieren
-    const fallback = brokerParam ? null : setTimeout(() => {
-      if (!connected && client === c) startNet(code, attempt + 1);
-    }, 8000);
-    c.on('connect', () => {
-      connected = true;
-      clearTimeout(fallback);
-      c.subscribe(T.host, { qos: 0 });
-      setNet('Bereit – Handys können beitreten.', 'ok');
-      renderJoinInfo();
-      // Nach Neuladen der Seite: alle Handys im Raum melden sich neu an
-      publish(T.all, { type: 'rehello' });
+    let first = true;
+    net = TetrisNet.host(code, {
+      onOpen() {
+        setNet('Bereit – Handys können beitreten.', 'ok');
+        if (first) renderJoinInfo();
+        first = false;
+        // Nach Neuladen der Seite: alle Handys im Raum melden sich neu an
+        net.broadcast({ type: 'rehello' });
+      },
+      onStatus(st) {
+        if (st === 'reconnecting') setNet('Verbindung zum Server unterbrochen – verbinde neu …', 'err');
+        if (st === 'replaced') setNet('Dieser Raum wurde in einem anderen Fenster geöffnet. Bitte nur ein Beamer-Fenster benutzen.', 'err');
+      },
+      onMessage(msg) {
+        if (msg.from) handleMessage(String(msg.from).slice(0, 64), msg);
+      },
     });
-    c.on('reconnect', () => { if (connected) setNet('Verbindung zum Server unterbrochen – verbinde neu …', 'err'); });
-    c.on('error', e => console.warn('MQTT-Fehler', e));
-    c.on('message', (topic, payload) => {
-      let msg = null;
-      try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
-      if (msg && typeof msg === 'object' && msg.from) handleMessage(String(msg.from).slice(0, 64), msg);
-    });
-  }
-
-  function publish(topic, msg) {
-    try { if (client) client.publish(topic, JSON.stringify(msg), { qos: 0 }); } catch (e) { /* egal */ }
   }
 
   // „Verbindung“ zu einem Handy: schickt Nachrichten an dessen eigenes Topic
   function makeConn(id) {
-    return { id, open: true, send(msg) { publish(T.client(id), msg); }, close() { this.open = false; } };
+    return { id, open: true, send(msg) { if (net) net.sendTo(id, msg); }, close() { this.open = false; } };
   }
 
   function newRoom() {
     if (phase !== 'lobby') return;
-    publish(T.all, { type: 'closed' });
+    net.broadcast({ type: 'closed' });
     players.clear();
     updateLobby();
     // kurz warten, damit die Nachricht an die Handys noch rausgeht
-    setTimeout(() => startNet(newCode(), 0), 500);
+    setTimeout(() => startNet(newCode()), 500);
   }
 
   function joinUrl() {
@@ -127,7 +111,6 @@
     u.search = '';
     u.hash = '';
     u.searchParams.set('room', roomCode);
-    u.searchParams.set('b', brokerKey);
     return u.toString();
   }
 
@@ -186,7 +169,7 @@
     }
     if (!me || !me.connected) {
       // Unbekanntes Handy (z. B. nach Neuladen der Beamer-Seite): neu anmelden lassen
-      if (msg.type !== 'bye') publish(T.client(id), { type: 'rehello' });
+      if (msg.type !== 'bye' && net) net.sendTo(id, { type: 'rehello' });
       return;
     }
     if (msg.type === 'input') {
@@ -804,6 +787,5 @@
   requestAnimationFrame(loop);
   let saved = null;
   try { saved = sessionStorage.getItem('tetrisRoom'); } catch (e) { /* egal */ }
-  if (typeof mqtt === 'undefined') setNet('Die Verbindungs-Bibliothek konnte nicht geladen werden.', 'err');
-  else startNet(saved || newCode(), 0);
+  startNet(saved || newCode());
 })();
