@@ -46,6 +46,8 @@
     clientId = Math.random().toString(36).slice(2);
   }
 
+  // Persönlicher QR-Code vom Beamer (Wiedereinstieg nach Verbindungsabbruch)
+  let rejoinToken = (params.get('rejoin') || '').toUpperCase();
   if (code) $('#codeLabel').hidden = true;
   else $('#code').value = '';
 
@@ -70,9 +72,9 @@
       joinMsg('Bitte den 5-stelligen Code vom Beamer eingeben.', true);
       return;
     }
-    try { localStorage.setItem('tetrisName', name); } catch (e) { /* egal */ }
+    if (!rejoinToken) { try { localStorage.setItem('tetrisName', name); } catch (e) { /* egal */ } }
     $('#btnJoin').disabled = true;
-    joinMsg('Verbinde …');
+    joinMsg(rejoinToken ? 'Verbinde dich wieder …' : 'Verbinde …');
     stopped = false;
     joining = true;
     helloTries = 0;
@@ -112,7 +114,8 @@
   function sendHello() {
     if (stopped) return;
     send({
-      type: 'hello', name: $('#name').value.trim().slice(0, 16),
+      type: 'hello', name: rejoinToken ? '' : $('#name').value.trim().slice(0, 16),
+      rejoin: rejoinToken || undefined,
       score: game ? game.score : 0, lines: game ? game.lines : 0,
     });
   }
@@ -195,6 +198,16 @@
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'welcome':
+        if (rejoinToken) {
+          // Ab jetzt wird dieses Handy normal wiedererkannt; Link aufräumen
+          rejoinToken = '';
+          try {
+            const u = new URL(location.href);
+            u.searchParams.delete('rejoin');
+            history.replaceState(null, '', u.toString());
+          } catch (e) { /* egal */ }
+          try { if (msg.name) localStorage.setItem('tetrisName', msg.name); } catch (e) { /* egal */ }
+        }
         welcomed = true;
         hostLost = false;
         joining = false;
@@ -641,4 +654,10 @@
   $('#btnJoin').addEventListener('click', join);
   ['#name', '#code'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter') join(); }));
   requestAnimationFrame(loop);
+
+  // Mit persönlichem Wiedereinstiegs-Code direkt verbinden, ohne Namenseingabe
+  if (rejoinToken && code) {
+    $('#name').closest('label').hidden = true;
+    join();
+  }
 })();

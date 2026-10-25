@@ -112,12 +112,29 @@
     setTimeout(() => startNet(newCode()), 500);
   }
 
-  function joinUrl() {
+  function joinUrl(rejoinToken) {
     const u = new URL('controller.html', location.href);
     u.search = '';
     u.hash = '';
     u.searchParams.set('room', roomCode);
+    if (rejoinToken) u.searchParams.set('rejoin', rejoinToken);
     return u.toString();
+  }
+
+  function newToken() {
+    let t = '';
+    for (let i = 0; i < 8; i++) t += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    return t;
+  }
+
+  // Ein neues Handy übernimmt eine getrennte Person (Wiedereinstieg per persönlichem QR-Code)
+  function rekey(p, newId) {
+    const oldId = p.id;
+    players.delete(oldId);
+    p.id = newId;
+    players.set(newId, p);
+    finalists = finalists.map(x => (x === oldId ? newId : x));
+    qualified = qualified.map(x => (x === oldId ? newId : x));
   }
 
   function makeQr(el, text) {
@@ -148,10 +165,15 @@
 
     if (msg.type === 'hello') {
       const conn = makeConn(id);
+      let rejoined = false;
+      if (!me && msg.rejoin) {
+        const old = [...players.values()].find(q => q.token === String(msg.rejoin) && !q.connected);
+        if (old) { rekey(old, id); me = old; rejoined = true; }
+      }
       let p = me;
       if (!p) {
         if (players.size >= MAX_PLAYERS) { safeSend(conn, { type: 'full' }); return; }
-        p = { id, conn: null, name: '', connected: false, score: 0, lines: 0, qualifiedAt: 0, lastSeen: 0, bumped: 0 };
+        p = { id, conn: null, name: '', connected: false, score: 0, lines: 0, qualifiedAt: 0, lastSeen: 0, bumped: 0, token: newToken() };
         players.set(id, p);
       } else if (p.conn) {
         p.conn.close();
@@ -159,7 +181,7 @@
       p.conn = conn;
       p.connected = true;
       p.lastSeen = Date.now();
-      p.name = uniqueName(msg.name, id);
+      if (!rejoined && (String(msg.name || '').trim() || !p.name)) p.name = uniqueName(msg.name, id);
       // Das Handy meldet seinen aktuellen Punktestand (0 nach Neuladen der Seite)
       if (!p.qualifiedAt) {
         p.score = phase === 'lobby' ? 0 : Math.max(0, Number(msg.score) || 0);
@@ -170,7 +192,10 @@
       boardDirty = true;
       updateLobby();
       updateDots();
-      if (phase === 'paused' && pauseReason === 'disconnect' && finalistsConnected()) resume();
+      if (phase === 'paused' && pauseReason === 'disconnect') {
+        if (finalistsConnected()) resume();
+        else renderRejoin();
+      }
       return;
     }
     if (!me || !me.connected) {
@@ -211,6 +236,7 @@
       if (inputs[i]) inputs[i] = freshInput();
       if (games[i]) games[i].softDrop = false;
       if (phase === 'playing' || phase === 'countdown') pause('disconnect');
+      else if (phase === 'paused' && pausedFrom === 'playing') { pauseReason = 'disconnect'; renderRejoin(); broadcastState(); }
     }
     if (phase === 'lobby') players.delete(p.id);
     boardDirty = true;
@@ -514,13 +540,37 @@
     phase = 'paused';
     pauseReason = reason || 'teacher';
     for (const g of games) if (g) g.softDrop = false;
-    const sub = reason === 'disconnect'
-      ? 'Ein Handy hat die Verbindung verloren – bitte die Seite am Handy neu laden oder den QR-Code erneut scannen.'
-      : 'Weiter mit P';
-    showBanner('PAUSE', sub, false);
+    showBanner('PAUSE', reason === 'disconnect' ? '' : 'Weiter mit P', false);
+    if (reason === 'disconnect') renderRejoin();
     clearTimeout(dropTimer);
     if (reason === 'disconnect' && from === 'playing') dropTimer = setTimeout(showDropButtons, DROP_AFTER);
     broadcastState();
+  }
+
+  // Persönliche QR-Codes für alle getrennten Finalisten im Pausen-Banner
+  function renderRejoin() {
+    const box = $('#rejoin');
+    box.innerHTML = '';
+    const missing = finalists.map((id, i) => i).filter(i => !places[i] && !(finalist(i) && finalist(i).connected));
+    for (const i of missing) {
+      const p = finalist(i);
+      if (!p) continue;
+      const card = document.createElement('div');
+      card.className = 'rcard';
+      card.style.setProperty('--pc', PLAYER_COLORS[i]);
+      card.innerHTML = '<div class="rname"></div><div class="rtext"></div><div class="qr"></div><div class="rhint">oder auf deinem Handy einfach die Seite neu laden</div>';
+      $('.rname', card).textContent = p.name;
+      $('.rtext', card).textContent = `${p.name}, scanne diesen Code, um weiterzuspielen`;
+      box.append(card);
+      makeQr($('.qr', card), joinUrl(p.token));
+    }
+    box.hidden = !box.children.length;
+    $('#banner').classList.toggle('rejoining', !box.hidden);
+    const names = missing.map(i => finalistName(i));
+    $('#bannerSub').textContent = names.length
+      ? `Verbindung verloren – das Finale geht weiter, sobald ${names.join(' und ')} wieder da ${names.length > 1 ? 'sind' : 'ist'}.`
+      : '';
+    if (!$('#dropButtons').hidden) showDropButtons();
   }
 
   // Nach 20 s: „Ohne <Name> weiterspielen“ für jede getrennte Person im Finale
@@ -835,6 +885,8 @@
     $('#bannerText').style.color = color || '';
     $('#bannerSub').textContent = sub || '';
     $('#resultButtons').hidden = !withButtons;
+    $('#rejoin').hidden = true;
+    b.classList.remove('rejoining');
   }
 
   function hideBanner() {

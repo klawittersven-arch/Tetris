@@ -36,7 +36,7 @@ Alte Links auf `klawittersven-arch.github.io/Tetris` leiten automatisch auf die 
 | Esc | zurück zur Lobby / neues Spiel |
 | F11 | Vollbild |
 
-Verliert ein Finalisten-Handy die Verbindung, pausiert das Finale automatisch und geht weiter, sobald das Handy wieder verbunden ist (Seite neu laden oder QR-Code erneut scannen). Kommt es nach 20 Sekunden nicht zurück, erscheint der Button „Ohne <Name> weiterspielen“ – das Feld scheidet dann aus.
+Verliert ein Finalisten-Handy die Verbindung, pausiert das Finale automatisch und geht weiter, sobald das Handy wieder verbunden ist (Seite neu laden oder QR-Code erneut scannen). Am Beamer erscheint dann ein **persönlicher QR-Code mit dem Namen** der getrennten Person: Scannt sie ihn (auch mit einem anderen Browser oder Handy), spielt sie mit ihrem Feld und ihren Punkten direkt weiter. Kommt sie nach 20 Sekunden nicht zurück, erscheint zusätzlich der Button „Ohne <Name> weiterspielen“ – das Feld scheidet dann aus.
 
 ### Testen ohne Handys (nur Finale)
 

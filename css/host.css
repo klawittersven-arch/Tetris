@@ -249,3 +249,18 @@ button.big.alt { background: var(--panel); border: 2px solid var(--line); }
 
 /* ausgeblendete Button-Reihen wirklich verstecken */
 .btnrow[hidden] { display: none; }
+
+/* Wiedereinstieg: persönlicher QR-Code für getrennte Finalisten */
+.banner.rejoining { background: rgba(6, 9, 18, .9); gap: 1.4vh; }
+.banner.rejoining .bigtext { font-size: clamp(36px, 9vh, 120px); }
+.rejoin[hidden] { display: none; }
+.rejoin { display: flex; gap: 3vw; justify-content: center; flex-wrap: wrap; pointer-events: auto; }
+.rcard {
+  background: var(--panel); border: 4px solid var(--pc); border-radius: 20px;
+  padding: 1.6vh 1.6vw; display: flex; flex-direction: column; align-items: center; gap: 1vh; max-width: 34vw;
+}
+.rcard .rname { color: var(--pc); font-size: clamp(24px, 5vh, 64px); font-weight: 900; line-height: 1; }
+.rcard .rtext { font-size: clamp(14px, 2.2vh, 26px); font-weight: 700; }
+.rcard .qr { background: #fff; padding: 10px; border-radius: 12px; }
+.rcard .qr img, .rcard .qr canvas { display: block; width: 24vh !important; height: 24vh !important; }
+.rcard .rhint { color: var(--muted); font-size: clamp(11px, 1.6vh, 18px); }
