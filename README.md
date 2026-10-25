@@ -68,3 +68,7 @@ css/                Gestaltung
 img/kbs-logo.png    Schullogo
 vendor/             qrcodejs 1.0.0 (MIT-Lizenz)
 ```
+
+---
+
+© 2026 Sven Klawitter

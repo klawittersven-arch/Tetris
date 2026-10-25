@@ -204,3 +204,9 @@ button.big.alt { background: var(--panel); border: 2px solid var(--line); }
   font-size: clamp(18px, 3.6vh, 46px); line-height: 1; margin-bottom: .4vh;
 }
 .brand .title { font-size: clamp(30px, 7.4vh, 100px); line-height: 1.05; white-space: nowrap; }
+
+/* Urhebervermerk (nur in der Lobby) */
+.credit {
+  position: absolute; right: 1.6vw; bottom: 1.4vh;
+  color: var(--muted); opacity: .55; font-size: clamp(10px, 1.4vh, 16px); letter-spacing: .03em;
+}

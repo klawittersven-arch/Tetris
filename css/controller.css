@@ -101,3 +101,9 @@ input:focus { outline: none; border-color: var(--accent); }
   box-shadow: 0 0 0 4px rgba(201, 124, 69, .9), 0 8px 24px rgba(0, 0, 0, .5);
 }
 #join h1 small { display: block; font-size: 18px; letter-spacing: .5em; color: #d9894f; -webkit-text-fill-color: #d9894f; margin-bottom: 2px; }
+
+/* Urhebervermerk */
+#join .credit { margin-top: 8px; text-align: center; color: var(--muted); opacity: .55; font-size: 12px; }
+
+/* versteckte Felder (z. B. Raum-Code, wenn er schon im QR-Link steht) wirklich ausblenden */
+label[hidden] { display: none; }
