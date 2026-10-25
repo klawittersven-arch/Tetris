@@ -11,27 +11,19 @@
 <body>
   <!-- Runde 2: Duell -->
   <main id="game" hidden>
-    <section class="player" id="p0">
-      <header class="pname"><span class="dot"></span><span class="name">Spieler 1</span></header>
-      <canvas class="board"></canvas>
-    </section>
-
     <aside id="center">
       <img class="badge sm" src="img/kbs-logo.png" alt="Schullogo">
       <h1>FINALE</h1>
       <div id="rounds"><span id="r0">0</span><small>:</small><span id="r1">0</span></div>
       <div class="roundlabel">Runden</div>
+      <ul id="wins"></ul>
       <div class="teacher">
         <button id="btnPause" title="Taste P">Pause</button>
         <button id="btnLobby" title="Taste Esc">Neues Spiel</button>
         <button class="btnFull" title="Taste F11">Vollbild</button>
       </div>
     </aside>
-
-    <section class="player" id="p1">
-      <header class="pname"><span class="dot"></span><span class="name">Spieler 2</span></header>
-      <canvas class="board"></canvas>
-    </section>
+    <!-- Spielerfelder werden je nach Finalgröße (2 oder 4) per JavaScript eingefügt -->
   </main>
 
   <!-- Runde 1: Rangliste -->
@@ -40,6 +32,7 @@
       <div>
         <div class="qround"><img class="badge xs" src="img/kbs-logo.png" alt="">KBS · RUNDE 1</div>
         <h1 class="qtitle">Wer schafft zuerst <b class="target">100</b> Punkte?</h1>
+        <div class="qsub">Die ersten <b class="fsize">2</b> kommen ins Finale.</div>
       </div>
       <div class="qjoin">
         <div class="qcount"><b id="qPlayers">0</b> Spieler/innen</div>
@@ -76,6 +69,12 @@
         <h2><span id="count">0</span> / 30 dabei</h2>
         <ul id="chips"><li class="empty">Noch niemand – scannt den QR-Code!</li></ul>
         <p class="hint">Antippen eines Namens entfernt die Person.</p>
+        <div class="target-set">Ins Finale kommen
+          <div class="seg" id="finalSize">
+            <button data-n="2" class="on">2</button><button data-n="4">4</button>
+          </div>
+          Spieler/innen
+        </div>
         <label class="target-set">Zielpunktzahl für Runde 1
           <input id="target" type="number" min="100" max="100000" step="100" value="100">
         </label>
@@ -85,8 +84,8 @@
     </div>
     <details class="help">
       <summary>Ablauf &amp; Tasten</summary>
-      <p><b>Runde 1:</b> Alle spielen auf dem eigenen Handy. Die ersten zwei, die die Zielpunktzahl erreichen, kommen ins Finale. Wer vollläuft, beginnt mit 0 Punkten neu.</p>
-      <p><b>Runde 2 (Finale):</b> Die zwei spielen am Beamer gegeneinander. Gelöschte Reihen schicken Müllzeilen zum Gegner.</p>
+      <p><b>Runde 1:</b> Alle spielen auf dem eigenen Handy. Die ersten 2 bzw. 4 (einstellbar), die die Zielpunktzahl erreichen, kommen ins Finale. Wer vollläuft, beginnt mit 0 Punkten neu.</p>
+      <p><b>Runde 2 (Finale):</b> Die Finalisten spielen am Beamer gegeneinander. Gelöschte Reihen schicken Müllzeilen zum Gegner – bei 4 reihum. Wer zuletzt übrig ist, gewinnt.</p>
       <p><b>Lehrkraft:</b> Enter = Start / weiter · P = Pause · Esc = Lobby / neues Spiel · F11 = Vollbild</p>
       <p><b>Handy:</b> ◀ ▶ bewegen · ↻ drehen · Tippen in die Bildschirmmitte = Stein sofort fallen lassen</p>
       <p><b>Tastatur-Test im Finale:</b> Spieler 1: A / D bewegen, W drehen, S fallen lassen · Spieler 2: ← / → bewegen, ↑ drehen, ↓ fallen lassen</p>
@@ -100,11 +99,7 @@
     <img class="badge md" src="img/kbs-logo.png" alt="Schullogo">
     <div class="qround">RUNDE 1 GESCHAFFT!</div>
     <h1 class="title">FINALE</h1>
-    <div class="versus">
-      <div class="fname" id="f0">…</div>
-      <div class="vs">vs.</div>
-      <div class="fname" id="f1">…</div>
-    </div>
+    <div class="versus" id="versus"></div>
     <button id="btnFinal" class="big">Finale starten <small>(Enter)</small></button>
     <button id="btnBackQ">Zur Lobby</button>
   </div>
@@ -113,6 +108,7 @@
   <div id="banner" class="overlay banner" hidden>
     <div class="bigtext" id="bannerText"></div>
     <div class="smalltext" id="bannerSub"></div>
+    <div class="btnrow" id="dropButtons" hidden></div>
     <div class="btnrow" id="resultButtons" hidden>
       <button id="btnNext" class="big">Revanche <small>(Enter)</small></button>
       <button id="btnNew" class="big alt">Neues Spiel <small>(Esc)</small></button>

@@ -275,7 +275,7 @@
     const finalist = s.slot >= 0;
     pad.classList.remove('win', 'lose');
     document.documentElement.style.setProperty('--accent', s.color || '#a78bfa');
-    const fin = `<span class="hl">${escapeHtml(s.finalists[0])}</span> vs. <span class="hl">${escapeHtml(s.finalists[1])}</span>`;
+    const fin = (s.finalists || []).map(n => `<span class="hl">${escapeHtml(n)}</span>`).join(s.finalists && s.finalists.length > 2 ? ' · ' : ' vs. ');
     const targetTxt = Number(s.target).toLocaleString('de-DE');
 
     // Runde 1: lokales Spiel anlegen (gleiche Steinfolge für alle)
@@ -320,7 +320,7 @@
         setView('msg');
         $('#info').textContent = '';
         if (finalist) {
-          setStatus(`🏆 Du bist im FINALE!<small>gegen ${escapeHtml(s.finalists[1 - s.slot])} – schau auf den Beamer.<br>Gleich steuerst du mit diesem Handy.</small>`);
+          setStatus(`🏆 Du bist im FINALE!<small>gegen ${opponents(s)} – schau auf den Beamer.<br>Gleich steuerst du mit diesem Handy.</small>`);
           vibrate([80, 60, 200]);
         } else {
           setStatus(`Runde 1 ist vorbei!<small>Finale: ${fin}<br>Schau auf den Beamer 👀</small>`);
@@ -345,6 +345,16 @@
     }
   }
 
+  function opponents(s) {
+    return (s.finalists || []).filter((n, i) => i !== s.slot).map(escapeHtml).join(', ');
+  }
+
+  function standText(s) {
+    const names = s.finalists || [], wins = s.wins || [];
+    if (names.length === 2) return `Stand ${wins[0] || 0} : ${wins[1] || 0} – ${escapeHtml(names[0])} vs. ${escapeHtml(names[1])}`;
+    return 'Siege: ' + names.map((n, i) => `${escapeHtml(n)} ${wins[i] || 0}`).join(' · ');
+  }
+
   function duelView(s, prev, fin) {
     const finalist = s.slot >= 0;
     const pad = $('#pad');
@@ -353,16 +363,23 @@
       $('#info').textContent = 'Zuschauer/in';
       let t = `Schau auf den Beamer 👀<small>Finale: ${fin}</small>`;
       if (s.phase === 'paused') t = `PAUSE<small>Finale: ${fin}</small>`;
-      if (s.phase === 'over') t = `Runde vorbei!<small>Stand ${s.rounds[0]} : ${s.rounds[1]} – ${fin}</small>`;
+      if (s.phase === 'over') t = `Runde vorbei!<small>${standText(s)}</small>`;
       setStatus(t);
       return;
     }
     setView('pad');
-    $('#info').textContent = `Runden ${s.rounds[0]} : ${s.rounds[1]}`;
-    const opp = escapeHtml(s.finalists[1 - s.slot]);
+    const wins = s.wins || [];
+    $('#info').textContent = wins.length === 2
+      ? `Runden ${wins[s.slot] || 0} : ${wins[1 - s.slot] || 0}`
+      : `Deine Siege: ${wins[s.slot] || 0}`;
+    const opp = opponents(s);
     if (s.phase === 'countdown') {
       setStatus(s.count ? String(s.count) : '', true);
       if (s.count) vibrate(20);
+    } else if (s.phase === 'playing' && s.place) {
+      setStatus(`Ausgeschieden – Platz ${s.place}<small>Schau auf den Beamer, wer gewinnt!</small>`);
+      pad.classList.add('lose');
+      vibrate(300);
     } else if (s.phase === 'playing') {
       setStatus(`FINALE<small>gegen ${opp} – schau auf den Beamer!<br><br>👆 Hier tippen = Stein fallen lassen</small>`);
       if (prev === 'countdown') vibrate(80);
@@ -375,7 +392,8 @@
         vibrate([80, 60, 80, 60, 200]);
       } else if (s.result === 'lose') {
         pad.classList.add('lose');
-        setStatus('Verloren …<small>Vielleicht gibt es eine Revanche!</small>');
+        const pl = wins.length > 2 && s.place ? `Platz ${s.place}` : 'Verloren …';
+        setStatus(`${pl}<small>Vielleicht gibt es eine Revanche!</small>`);
         vibrate(300);
       } else {
         setStatus('Unentschieden!');

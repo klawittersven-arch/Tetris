@@ -3,7 +3,9 @@
 Die ganze Klasse spielt Tetris mit den eigenen Smartphones, der Laptop der Lehrkraft zeigt alles am Beamer. Es muss nichts installiert werden: Alle scannen einen QR-Code.
 
 - **Runde 1 – Qualifikation:** Bis zu 30 SuS spielen gleichzeitig Tetris **auf ihrem Handy** (Spielfeld + 3 Knöpfe: ◀ ↻ ▶; Tippen aufs Spielfeld lässt den Stein sofort fallen). Am Beamer läuft eine Live-Rangliste. Die **ersten zwei**, die die Zielpunktzahl erreichen, kommen ins Finale. Wer vollläuft, bekommt ein neues Feld und beginnt wieder bei 0 Punkten.
-- **Runde 2 – Finale:** Die beiden Finalisten spielen am Beamer gegeneinander, gesteuert mit ihren Handys (wieder ◀ ↻ ▶, Tippen in die Bildschirmmitte = Stein fallen lassen). Wer 2 oder mehr Reihen auf einmal löscht, schickt Müllzeilen zum Gegner (2 → 1, 3 → 2, Tetris → 4). Wer oben anstößt, verliert. Alle anderen sehen auf dem Handy „Schau auf den Beamer“.
+- **Runde 2 – Finale (2 oder 4 Spieler/innen, in der Lobby einstellbar):** Die Finalisten spielen am Beamer gegeneinander, gesteuert mit ihren Handys (wieder ◀ ↻ ▶, Tippen in die Bildschirmmitte = Stein fallen lassen). Wer 2 oder mehr Reihen auf einmal löscht, schickt Müllzeilen zum Gegner (2 → 1, 3 → 2, Tetris → 4). Wer oben anstößt, scheidet aus.
+  - Bei **4 Finalisten** gehen die Müllzeilen **reihum** an den nächsten noch lebenden Gegner (am Beamer steht, wer getroffen wurde). Ausgeschiedene bekommen ihren Platz (4., 3., 2.); wer zuletzt übrig ist, gewinnt die Runde.
+  - Alle anderen sehen auf dem Handy „Schau auf den Beamer“.
 - Alle bekommen dieselbe Steinfolge – es zählt nur das Können.
 
 Punkte (Standard-Tetris): 1 Reihe = 100, 2 Reihen = 300, 3 Reihen = 500, 4 Reihen = 800 – jeweils mal Level. Das Level steigt alle 10 Reihen bzw. alle 45 Sekunden (die Steine fallen dann schneller).
@@ -20,7 +22,7 @@ Alte Links auf `klawittersven-arch.github.io/Tetris` leiten automatisch auf die 
 
 1. Laptop an den Beamer, die Seite öffnen, mit **F11** Vollbild.
 2. **Lobby:** Alle scannen den QR-Code, geben ihren Namen ein und tippen **Mitspielen**. Die Namen erscheinen am Beamer (gleiche Namen werden durchnummeriert). Antippen eines Namens entfernt die Person.
-3. **Zielpunktzahl** einstellen (Standard 100 = eine gelöschte Reihe; für längere Runden z. B. 500 oder 1000).
+3. **Finalgröße** (2 oder 4) und **Zielpunktzahl** einstellen (Standard 100 = eine gelöschte Reihe; für längere Runden z. B. 500 oder 1000).
 4. **Runde 1 starten** (Enter), sobald genug SuS dabei sind (mind. 2). Nach dem Countdown spielen alle auf dem Handy. Nachzügler können über den kleinen QR-Code oben rechts noch einsteigen.
 5. Haben zwei SuS das Ziel erreicht, zeigt der Beamer **„FINALE: A vs. B“**. **Finale starten** (Enter).
 6. Nach dem Finale: **Revanche** (Enter, gleiche Finalisten, Rundenstand zählt weiter) oder **Neues Spiel** (Esc → zurück zur Lobby, alle bleiben verbunden).
@@ -34,7 +36,7 @@ Alte Links auf `klawittersven-arch.github.io/Tetris` leiten automatisch auf die 
 | Esc | zurück zur Lobby / neues Spiel |
 | F11 | Vollbild |
 
-Verliert ein Finalisten-Handy die Verbindung, pausiert das Finale automatisch und geht weiter, sobald das Handy wieder verbunden ist (Seite neu laden oder QR-Code erneut scannen).
+Verliert ein Finalisten-Handy die Verbindung, pausiert das Finale automatisch und geht weiter, sobald das Handy wieder verbunden ist (Seite neu laden oder QR-Code erneut scannen). Kommt es nach 20 Sekunden nicht zurück, erscheint der Button „Ohne <Name> weiterspielen“ – das Feld scheidet dann aus.
 
 ### Testen ohne Handys (nur Finale)
 

@@ -1,7 +1,7 @@
 /*
  * Beamer-Ansicht: verwaltet die Verbindungen zu bis zu 30 Handys (über den eigenen Cloudflare-Dienst).
  * Runde 1: alle spielen auf dem Handy, der Beamer zeigt die Rangliste.
- * Runde 2: die zwei Schnellsten spielen das Finale-Duell am Beamer.
+ * Runde 2: die 2 oder 4 Schnellsten spielen das Finale am Beamer.
  */
 (function () {
   'use strict';
@@ -12,7 +12,8 @@
   const MAX_PLAYERS = 30;
   const DAS = 160;   // ms bis zur Wiederholung beim Gedrückthalten
   const ARR = 45;    // ms zwischen Wiederholungen
-  const PLAYER_COLORS = ['#3da5ff', '#ff9f1c'];
+  const PLAYER_COLORS = ['#3da5ff', '#ff9f1c', '#34d399', '#f472b6'];
+  const DROP_AFTER = 20000; // ms: danach kann ohne getrennte Finalisten weitergespielt werden
 
   const $ = (s, el = document) => el.querySelector(s);
 
@@ -28,15 +29,20 @@
   let target = 100;
   let r1Seed = 0;
   let qualified = [];           // clientIds in Reihenfolge des Erreichens
-  let finalists = [null, null]; // clientIds der beiden Finalisten
-  let games = [null, null];
-  let rounds = [0, 0];
-  let lastResult = null;        // { winner: 0|1|-1 }
+  let finalSize = 2;            // 2 oder 4 Finalisten (Lobby)
+  let N = 2;                    // Finalisten der laufenden Partie
+  let finalists = [];           // clientIds der Finalisten
+  let games = [];
+  let rounds = [];              // Siege pro Finalist
+  let places = [];              // 0 = noch im Spiel, sonst Platzierung
+  let nextTarget = [];          // Müll reihum: nächster Gegner pro Spieler
+  let lastResult = null;        // { winner: Index | -1 }
+  let dropTimer = null;
   let countdownTimer = null;
   let boardDirty = true;
   const players = new Map();    // clientId -> Spieler
-  const inputs = [0, 1].map(() => freshInput());
-  const popups = [[], []];
+  let inputs = [];
+  let popups = [];
 
   function freshInput() {
     return { left: false, right: false, dir: 0, das: 0, arr: 0 };
@@ -201,8 +207,8 @@
     p.connected = false;
     p.conn = null;
     const i = finalists.indexOf(p.id);
-    if (i >= 0) {
-      inputs[i] = freshInput();
+    if (i >= 0 && !places[i]) {
+      if (inputs[i]) inputs[i] = freshInput();
       if (games[i]) games[i].softDrop = false;
       if (phase === 'playing' || phase === 'countdown') pause('disconnect');
     }
@@ -221,7 +227,7 @@
   }, 1000);
 
   function finalistsConnected() {
-    return [0, 1].every(i => { const p = finalist(i); return !p || p.connected; });
+    return finalists.every((id, i) => { const p = finalist(i); return places[i] || !p || p.connected; });
   }
 
   function safeSend(conn, msg) {
@@ -236,13 +242,14 @@
       result = lastResult.winner === -1 ? 'draw' : (lastResult.winner === slot ? 'win' : 'lose');
     }
     const g = slot >= 0 ? games[slot] : null;
+    const names = finalists.map((id, i) => finalistName(i));
     safeSend(p.conn, Object.assign({
       type: 'state', phase, pausedFrom, pauseReason, target, seed: r1Seed,
       name: p.name, players: players.size,
       qualified: !!p.qualifiedAt, slot,
-      finalists: [finalistName(0), finalistName(1)],
+      finalists: names, wins: rounds, finalSize,
       color: slot >= 0 ? PLAYER_COLORS[slot] : null,
-      rounds: slot >= 0 ? [rounds[slot], rounds[1 - slot]] : rounds,
+      place: slot >= 0 ? places[slot] || 0 : 0,
       result, duelScore: g ? g.score : 0,
     }, extra || {}));
   }
@@ -257,13 +264,14 @@
   }
 
   function startR1() {
-    if (phase !== 'lobby' || connectedCount() < 2) return;
+    if (phase !== 'lobby' || connectedCount() < Math.max(2, finalSize)) return;
     target = Math.max(100, Math.min(100000, Math.round(Number($('#target').value) || 100)));
     $('#target').value = target;
     document.querySelectorAll('.target').forEach(el => { el.textContent = target.toLocaleString('de-DE'); });
+    document.querySelectorAll('.fsize').forEach(el => { el.textContent = finalSize; });
     r1Seed = (Math.random() * 2 ** 32) >>> 0;
     qualified = [];
-    finalists = [null, null];
+    finalists = [];
     for (const p of players.values()) { p.score = 0; p.lines = 0; p.qualifiedAt = 0; }
     show('quali');
     boardDirty = true;
@@ -276,16 +284,17 @@
     qualified.push(p.id);
     sendState(p);
     boardDirty = true;
-    if (qualified.length >= 2) endR1();
+    if (qualified.length >= finalSize) endR1();
   }
 
   function endR1() {
     phase = 'r1-done';
-    finalists = [qualified[0], qualified[1]];
-    rounds = [0, 0];
+    N = finalSize;
+    finalists = qualified.slice(0, N);
+    rounds = finalists.map(() => 0);
+    places = [];
     renderBoard();
-    $('#f0').textContent = finalistName(0);
-    $('#f1').textContent = finalistName(1);
+    renderVersus();
     setTimeout(() => { if (phase === 'r1-done') $('#finalists').hidden = false; }, 1200);
     broadcastState();
   }
@@ -315,7 +324,7 @@
       bar.style.width = `${Math.min(100, (p.score / target) * 100)}%`;
       const rank = document.createElement('span');
       rank.className = 'rank';
-      rank.textContent = p.qualifiedAt ? ['🥇', '🥈'][p.qualifiedAt - 1] || '✔' : `${k + 1}.`;
+      rank.textContent = p.qualifiedAt ? ['🥇', '🥈', '🥉', '🏅'][p.qualifiedAt - 1] || '✔' : `${k + 1}.`;
       const nm = document.createElement('span');
       nm.className = 'nm';
       nm.textContent = p.name;
@@ -367,17 +376,20 @@
 
   function startFinal() {
     if (phase !== 'r1-done') return;
-    rounds = [0, 0];
+    rounds = finalists.map(() => 0);
+    buildFields();
     startDuelRound();
   }
 
   function startDuelRound() {
     const seed = (Math.random() * 2 ** 32) >>> 0;
-    games = [new Game(seed, seed ^ 0x1234567), new Game(seed, seed ^ 0x7654321)];
-    inputs[0] = freshInput();
-    inputs[1] = freshInput();
-    popups[0] = []; popups[1] = [];
+    games = finalists.map((id, i) => new Game(seed, (seed ^ (0x1234567 * (i + 1))) >>> 0));
+    inputs = finalists.map(() => freshInput());
+    popups = finalists.map(() => []);
+    places = finalists.map(() => 0);
+    nextTarget = finalists.map((id, i) => (i + 1) % N);
     lastResult = null;
+    clearTimeout(dropTimer);
     show('game');
     updateDots();
     updateRounds();
@@ -389,19 +401,56 @@
     });
   }
 
+  function aliveCount() {
+    return places.filter(pl => !pl).length;
+  }
+
+  // Ausgeschiedene Felder bekommen ihren Platz; bleibt höchstens einer übrig, ist die Runde vorbei
+  function checkEliminations() {
+    const out = [];
+    games.forEach((g, i) => { if (g.over && !places[i]) out.push(i); });
+    if (!out.length) return;
+    const aliveBefore = aliveCount();
+    const place = aliveBefore - out.length + 1;   // gleichzeitig Ausgeschiedene teilen sich den Platz
+    for (const i of out) {
+      places[i] = place;
+      inputs[i] = freshInput();
+      sendState(finalist(i));
+    }
+    if (aliveCount() <= 1) finishRound();
+  }
+
   function finishRound() {
-    const over = games.map(g => g.over);
-    let winner = -1;
-    if (over[0] && !over[1]) winner = 1;
-    else if (over[1] && !over[0]) winner = 0;
+    let winner = places.findIndex(pl => !pl);
+    if (winner >= 0) places[winner] = 1;
+    else winner = -1;                              // alle gleichzeitig raus → unentschieden
     if (winner >= 0) rounds[winner]++;
     lastResult = { winner };
     phase = 'over';
+    clearTimeout(dropTimer);
     updateRounds();
-    const sub = `Stand ${rounds[0]} : ${rounds[1]}`;
+    const sub = standText();
     if (winner >= 0) showBanner(`${finalistName(winner)} gewinnt!`, sub, true, PLAYER_COLORS[winner]);
     else showBanner('Unentschieden!', sub, true);
     broadcastState();
+  }
+
+  function standText() {
+    if (N === 2) return `Stand ${rounds[0]} : ${rounds[1]}`;
+    return 'Siege: ' + finalists.map((id, i) => `${finalistName(i)} ${rounds[i]}`).join(' · ');
+  }
+
+  // Müll reihum an den nächsten noch lebenden Gegner
+  function pickTarget(i) {
+    let j = nextTarget[i];
+    for (let k = 0; k < N; k++) {
+      if (j !== i && !places[j] && !games[j].over) {
+        nextTarget[i] = (j + 1) % N;
+        return j;
+      }
+      j = (j + 1) % N;
+    }
+    return -1;
   }
 
   function handleEvents(i) {
@@ -414,8 +463,11 @@
         if (ev.b2b) addPopup(i, 'Back-to-Back', '#facc15');
         if (ev.combo >= 2) addPopup(i, `Combo ×${ev.combo}`, '#a3e635');
         if (ev.attack > 0) {
-          games[1 - i].receiveGarbage(ev.attack);
-          addPopup(i, `+${ev.attack} ➜`, '#ff4d5e');
+          const t = pickTarget(i);
+          if (t >= 0) {
+            games[t].receiveGarbage(ev.attack);
+            addPopup(i, N > 2 ? `+${ev.attack} ➜ ${finalistName(t)}` : `+${ev.attack} ➜`, '#ff4d5e');
+          }
         }
         if (p) safeSend(p.conn, { type: 'fx', k: 'clear', n: ev.lines });
       } else if (ev.type === 'garbage') {
@@ -466,11 +518,41 @@
       ? 'Ein Handy hat die Verbindung verloren – bitte die Seite am Handy neu laden oder den QR-Code erneut scannen.'
       : 'Weiter mit P';
     showBanner('PAUSE', sub, false);
+    clearTimeout(dropTimer);
+    if (reason === 'disconnect' && from === 'playing') dropTimer = setTimeout(showDropButtons, DROP_AFTER);
     broadcastState();
+  }
+
+  // Nach 20 s: „Ohne <Name> weiterspielen“ für jede getrennte Person im Finale
+  function showDropButtons() {
+    if (phase !== 'paused' || pauseReason !== 'disconnect') return;
+    const box = $('#dropButtons');
+    box.innerHTML = '';
+    finalists.forEach((id, i) => {
+      const p = finalist(i);
+      if (places[i] || (p && p.connected)) return;
+      const btn = document.createElement('button');
+      btn.className = 'big alt';
+      btn.textContent = `Ohne ${finalistName(i)} weiterspielen`;
+      btn.addEventListener('click', () => dropFinalist(i));
+      box.append(btn);
+    });
+    box.hidden = !box.children.length;
+  }
+
+  function dropFinalist(i) {
+    if (!games[i] || places[i]) return;
+    games[i].topOut();
+    games[i].takeEvents();
+    $('#dropButtons').hidden = true;
+    checkEliminations();
+    if (phase === 'paused' && finalistsConnected()) resume();
   }
 
   function resume() {
     if (phase !== 'paused') return;
+    clearTimeout(dropTimer);
+    $('#dropButtons').hidden = true;
     const to = pausedFrom;
     pauseReason = '';
     countdown(to === 'r1' ? 'r1-countdown' : 'countdown', () => {
@@ -490,10 +572,12 @@
     phase = 'lobby';
     pausedFrom = '';
     pauseReason = '';
-    games = [null, null];
-    rounds = [0, 0];
+    games = [];
+    rounds = [];
+    places = [];
     qualified = [];
-    finalists = [null, null];
+    finalists = [];
+    clearTimeout(dropTimer);
     for (const [id, p] of players) {
       if (!p.connected) players.delete(id);
       else { p.score = 0; p.lines = 0; p.qualifiedAt = 0; }
@@ -546,16 +630,16 @@
     const dt = Math.min(now - last, 100);
     last = now;
     if (phase === 'playing') {
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < N; i++) {
+        if (places[i]) continue;
         updateAutoRepeat(i, dt);
         games[i].update(dt);
       }
-      handleEvents(0);
-      handleEvents(1);
-      if (games[0].over || games[1].over) finishRound();
+      for (let i = 0; i < N; i++) handleEvents(i);
+      checkEliminations();
     }
     if (isDuel()) {
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < games.length; i++) {
         popups[i].forEach(p => { p.t += dt; });
         popups[i] = popups[i].filter(p => p.t < 1400);
         drawPlayer(i);
@@ -566,22 +650,56 @@
   }
 
   // ---------- Darstellung Duell ----------
-  const canvases = [$('#p0 canvas'), $('#p1 canvas')];
-  const ctxs = canvases.map(c => c.getContext('2d'));
-  const SIDE = 5, GAP1 = 0.4, METER = 0.6, GAP2 = 0.25;
-  const TOTAL_W = SIDE + GAP1 + METER + GAP2 + COLS;
+  let canvases = [];
+  let ctxs = [];
+  const SIDE = 5, SIDE4 = 3.2, GAP1 = 0.4, METER = 0.6, GAP2 = 0.25;
+  const sideW = () => (N > 2 ? SIDE4 : SIDE);
+  const totalW = () => sideW() + GAP1 + METER + GAP2 + COLS;
   let cell = 30;
 
+  // Spielerspalten für 2 oder 4 Finalisten anlegen
+  function buildFields() {
+    const game = $('#game');
+    game.querySelectorAll('.player').forEach(el => el.remove());
+    game.classList.toggle('four', N > 2);
+    canvases = [];
+    for (let i = 0; i < N; i++) {
+      const sec = document.createElement('section');
+      sec.className = 'player';
+      sec.id = 'p' + i;
+      sec.style.setProperty('--pc', PLAYER_COLORS[i]);
+      sec.innerHTML = '<header class="pname"><span class="dot"></span><span class="name"></span></header><canvas class="board"></canvas>';
+      game.append(sec);
+      canvases.push($('canvas', sec));
+    }
+    ctxs = canvases.map(c => c.getContext('2d'));
+    $('#center h1').style.background = N > 2
+      ? 'linear-gradient(90deg, #3da5ff, #34d399, #f472b6, #ff9f1c)'
+      : '';
+    if (N > 2) { $('#center h1').style.webkitBackgroundClip = 'text'; $('#center h1').style.backgroundClip = 'text'; }
+    updateDots();
+    updateRounds();
+  }
+
   function resize() {
-    const header = Math.max(40, $('.pname').getBoundingClientRect().height) + innerHeight * 0.04;
-    const byH = (innerHeight - header) / VISIBLE;
-    const byW = (innerWidth * 0.82 - Math.max(150, innerWidth * 0.15)) / 2 / TOTAL_W;
+    if (!canvases.length) return;
+    const nameH = Math.max(30, $('#game .pname') ? $('#game .pname').getBoundingClientRect().height : 40);
+    const TW = totalW();
+    let byH, byW;
+    if (N > 2) {
+      const bar = $('#center').getBoundingClientRect().height;
+      byH = (innerHeight - bar - nameH - innerHeight * 0.07) / VISIBLE;
+      byW = (innerWidth * 0.95 - innerWidth * 0.014 * (N - 1)) / N / TW;
+    } else {
+      byH = (innerHeight - nameH - innerHeight * 0.04) / VISIBLE;
+      byW = (innerWidth * 0.82 - Math.max(150, innerWidth * 0.15)) / 2 / TW;
+    }
     cell = Math.max(8, Math.floor(Math.min(byH, byW)));
     const dpr = window.devicePixelRatio || 1;
     canvases.forEach((c, i) => {
-      c.style.width = `${TOTAL_W * cell}px`;
+      c.style.width = `${TW * cell}px`;
       c.style.height = `${VISIBLE * cell}px`;
-      c.width = Math.round(TOTAL_W * cell * dpr);
+      c.width = Math.round(TW * cell * dpr);
       c.height = Math.round(VISIBLE * cell * dpr);
       ctxs[i].setTransform(dpr, 0, 0, dpr, 0, 0);
     });
@@ -589,9 +707,10 @@
   window.addEventListener('resize', resize);
 
   function layout(i) {
-    // Spieler 1: Seitenleiste links, Spieler 2: rechts (gespiegelt)
-    if (i === 0) {
-      return { side: 0, meter: (SIDE + GAP1) * cell, board: (SIDE + GAP1 + METER + GAP2) * cell };
+    const SW = sideW();
+    // Bei 2: Spieler 1 Seitenleiste links, Spieler 2 rechts (gespiegelt). Bei 4: immer rechts.
+    if (i === 0 && N === 2) {
+      return { side: 0, meter: (SW + GAP1) * cell, board: (SW + GAP1 + METER + GAP2) * cell };
     }
     return { board: 0, meter: (COLS + GAP2) * cell, side: (COLS + GAP2 + METER + GAP1) * cell };
   }
@@ -599,7 +718,7 @@
   function drawPlayer(i) {
     const ctx = ctxs[i];
     const c = cell;
-    const W = TOTAL_W * c, H = VISIBLE * c;
+    const W = totalW() * c, H = VISIBLE * c;
     const L = layout(i);
     const g = games[i];
     ctx.clearRect(0, 0, W, H);
@@ -621,7 +740,8 @@
     }
 
     // Seitenleiste
-    const sx = L.side, sw = SIDE * c;
+    const sx = L.side, sw = sideW() * c;
+    const compact = N > 2;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const label = (txt, y) => {
@@ -635,24 +755,40 @@
       ctx.fillText(txt, sx + sw / 2, y * c);
     };
 
-    label('NÄCHSTE', 0.45);
-    ctx.fillStyle = '#0d1424';
-    ctx.fillRect(sx, 0.9 * c, sw, 8.6 * c);
-    ctx.strokeStyle = '#24304d';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(sx + 1, 0.9 * c + 1, sw - 2, 8.6 * c - 2);
-    if (g) {
-      g.nextPieces(3).forEach((t, k) => {
-        miniPiece(ctx, t, sx + sw / 2, (2.35 + k * 2.7) * c, c * (k === 0 ? 0.8 : 0.65));
-      });
-    }
+    if (compact) {
+      // schmale Leiste: nächster Stein + Punkte
+      label('NÄCHSTE', 0.45);
+      ctx.fillStyle = '#0d1424';
+      ctx.fillRect(sx, 0.9 * c, sw, 3.2 * c);
+      if (g) miniPiece(ctx, g.nextPieces(1)[0], sx + sw / 2, 2.5 * c, c * 0.62);
+      label('PUNKTE', 5.2);
+      ctx.save();
+      ctx.font = `800 ${Math.round(c * 0.8)}px "Segoe UI", system-ui, sans-serif`;
+      ctx.fillStyle = '#e8ecf8';
+      ctx.fillText(g ? g.score.toLocaleString('de-DE') : '0', sx + sw / 2, 6.1 * c, sw);
+      ctx.restore();
+      label('SIEGE', 7.6);
+      value(String(rounds[i] || 0), 8.5);
+    } else {
+      label('NÄCHSTE', 0.45);
+      ctx.fillStyle = '#0d1424';
+      ctx.fillRect(sx, 0.9 * c, sw, 8.6 * c);
+      ctx.strokeStyle = '#24304d';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx + 1, 0.9 * c + 1, sw - 2, 8.6 * c - 2);
+      if (g) {
+        g.nextPieces(3).forEach((t, k) => {
+          miniPiece(ctx, t, sx + sw / 2, (2.35 + k * 2.7) * c, c * (k === 0 ? 0.8 : 0.65));
+        });
+      }
 
-    label('PUNKTE', 11.3);
-    value(g ? g.score.toLocaleString('de-DE') : '0', 12.25);
-    label('REIHEN', 13.55);
-    value(g ? String(g.lines) : '0', 14.5);
-    label('LEVEL', 15.8);
-    value(g ? String(g.level) : '1', 16.75);
+      label('PUNKTE', 11.3);
+      value(g ? g.score.toLocaleString('de-DE') : '0', 12.25);
+      label('REIHEN', 13.55);
+      value(g ? String(g.lines) : '0', 14.5);
+      label('LEVEL', 15.8);
+      value(g ? String(g.level) : '1', 16.75);
+    }
 
     // Einblendungen (TETRIS!, Combo, Angriff)
     popups[i].forEach((p, k) => {
@@ -661,20 +797,23 @@
       ctx.font = `900 ${Math.round(c * 1.1)}px "Segoe UI", system-ui, sans-serif`;
       ctx.shadowColor = 'rgba(0,0,0,0.9)';
       ctx.shadowBlur = 8;
-      ctx.fillText(p.text, L.board + COLS * c / 2, (7 + k * 1.4) * c - p.t / 1400 * c);
+      ctx.fillText(p.text, L.board + COLS * c / 2, (7 + k * 1.4) * c - p.t / 1400 * c, COLS * c * 0.95);
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
     });
 
-    // Ergebnis auf dem Feld
-    if (g && phase === 'over' && lastResult) {
-      const won = lastResult.winner === i;
-      const draw = lastResult.winner === -1;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    // Ergebnis / Platzierung auf dem Feld
+    const pl = places[i] || 0;
+    const ended = phase === 'over' && lastResult;
+    if (g && (ended || (pl && N > 2))) {
+      const draw = ended && lastResult.winner === -1;
+      const won = pl === 1 && !draw;
+      let text = won ? 'SIEG' : (draw ? 'REMIS' : (N > 2 ? `PLATZ ${pl}` : 'K.O.'));
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(L.board, H * 0.15 - 1.6 * c, COLS * c, 3.2 * c);
-      ctx.fillStyle = won ? '#2ecc71' : (draw ? '#e8ecf8' : '#ff4d5e');
+      ctx.fillStyle = won ? '#2ecc71' : (draw ? '#e8ecf8' : (N > 2 ? '#e8ecf8' : '#ff4d5e'));
       ctx.font = `900 ${Math.round(c * 1.6)}px "Segoe UI", system-ui, sans-serif`;
-      ctx.fillText(won ? 'SIEG' : (draw ? 'REMIS' : 'K.O.'), L.board + COLS * c / 2, H * 0.15);
+      ctx.fillText(text, L.board + COLS * c / 2, H * 0.15, COLS * c * 0.95);
     }
   }
 
@@ -703,14 +842,50 @@
   }
 
   function updateRounds() {
-    $('#r0').textContent = rounds[0];
-    $('#r1').textContent = rounds[1];
+    $('#r0').textContent = rounds[0] || 0;
+    $('#r1').textContent = rounds[1] || 0;
+    $('#r0').style.color = PLAYER_COLORS[0];
+    $('#r1').style.color = PLAYER_COLORS[1];
+    const ul = $('#wins');
+    ul.innerHTML = '';
+    if (N > 2) {
+      finalists.forEach((id, i) => {
+        const li = document.createElement('li');
+        li.style.color = PLAYER_COLORS[i];
+        li.textContent = `${finalistName(i)} `;
+        const w = document.createElement('span');
+        w.className = 'w';
+        w.textContent = `${rounds[i] || 0} ${rounds[i] === 1 ? 'Sieg' : 'Siege'}`;
+        li.append(w);
+        ul.append(li);
+      });
+    }
+  }
+
+  function renderVersus() {
+    const box = $('#versus');
+    box.innerHTML = '';
+    box.classList.toggle('four', N > 2);
+    finalists.forEach((id, i) => {
+      if (N === 2 && i === 1) {
+        const vs = document.createElement('div');
+        vs.className = 'vs';
+        vs.textContent = 'vs.';
+        box.append(vs);
+      }
+      const d = document.createElement('div');
+      d.className = 'fname';
+      d.style.color = PLAYER_COLORS[i];
+      d.textContent = finalistName(i);
+      box.append(d);
+    });
   }
 
   function updateDots() {
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < canvases.length; i++) {
       const p = finalist(i);
       const sec = $('#p' + i);
+      if (!sec) continue;
       $('.name', sec).textContent = finalistName(i);
       const dot = $('.dot', sec);
       dot.className = 'dot ' + (p ? (p.connected ? 'on' : 'off') : 'kbd');
@@ -737,9 +912,10 @@
       ul.append(li);
     }
     const n = connectedCount();
+    const need = Math.max(2, finalSize);
     $('#count').textContent = n;
-    $('#btnStart').disabled = n < 2;
-    $('#startHint').textContent = n < 2 ? 'Mindestens 2 Spieler/innen nötig.' : 'Startet, sobald genug dabei sind.';
+    $('#btnStart').disabled = n < need;
+    $('#startHint').textContent = n < need ? `Mindestens ${need} Spieler/innen nötig.` : 'Startet, sobald genug dabei sind.';
   }
 
   function kick(p) {
@@ -769,6 +945,13 @@
     fn();
   }));
   onClick('#btnStart', startR1);
+  document.querySelectorAll('#finalSize button').forEach(btn => btn.addEventListener('click', () => {
+    btn.blur();
+    if (phase !== 'lobby') return;
+    finalSize = Number(btn.dataset.n);
+    document.querySelectorAll('#finalSize button').forEach(b => b.classList.toggle('on', b === btn));
+    updateLobby();
+  }));
   onClick('#btnNewRoom', () => { if (confirm('Neuen Raum mit neuem Code öffnen? Alle Handys müssen dann neu scannen.')) newRoom(); });
   onClick('#btnFinal', startFinal);
   onClick('#btnBackQ', toLobby);
@@ -780,6 +963,9 @@
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen().catch(() => {});
   });
+
+  // Zugriff für automatische Tests
+  window.__host = { get games() { return games; }, get places() { return places; }, get phase() { return phase; } };
 
   // ---------- Start ----------
   if (location.protocol === 'file:') $('#fileWarn').hidden = false;
